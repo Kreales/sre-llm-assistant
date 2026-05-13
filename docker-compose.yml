@@ -1,0 +1,91 @@
+services:
+  opensearch:
+    image: opensearchproject/opensearch:2.15.0
+    container_name: opensearch
+    environment:
+      - discovery.type=single-node
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=111
+      - plugins.security.disabled=true
+      - "ES_JAVA_OPTS=-Xms256m -Xmx256m"  # ↓ уменьшили с 512m
+      - bootstrap.memory_lock=false  # ↓ отключили для экономии
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
+    ports: ["9200:9200"]
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+      - ./infra/opensearch/opensearch.yml:/usr/share/opensearch/config/opensearch.yml:ro
+    networks: [sre-net]
+    deploy:
+      resources:
+        limits: { memory: 1.5G, cpus: "1" }  # ↓ CPU limit
+        reservations: { memory: 512M, cpus: "0.5" }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f -u admin:111 http://localhost:9200/_cluster/health || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 10  # ↑ больше попыток, т.к. медленнее стартует
+
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.15.0
+    container_name: dashboards
+    environment:
+      - OPENSEARCH_HOSTS=["http://opensearch:9200"]
+    ports: ["5601:5601"]
+    networks: [sre-net]
+    depends_on: { opensearch: { condition: service_healthy } }
+    deploy: { resources: { limits: { memory: 400M, cpus: "0.4" } } }
+
+  fluent-bit:
+    image: fluent/fluent-bit:3.0.4
+    container_name: fluent-bit
+    volumes:
+      - ./infra/fluentbit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - ./infra/fluentbit/parsers.conf:/fluent-bit/etc/parsers.conf:ro
+    networks: [sre-net]
+    depends_on: { opensearch: { condition: service_healthy } }
+    deploy: { resources: { limits: { memory: 128M, cpus: "0.2" } } }
+
+  ollama:
+    image: ollama/ollama:0.5.7
+    container_name: ollama
+    ports: ["11434:11434"]
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+      - OLLAMA_ORIGINS=*
+      - OLLAMA_NUM_THREADS=2  # ← важно: ограничиваем потоки под 2 vCPU
+    volumes:
+      - ollama-data:/root/.ollama
+    networks: [sre-net]
+    deploy:
+      resources:
+        limits: { memory: 4G, cpus: "1.0" }  # ↓ CPU limit для модели 3B
+        reservations: { memory: 2G }
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 20s
+      timeout: 10s
+      retries: 6
+
+  sre-api:
+    build: { context: ., dockerfile: Dockerfile.dev }
+    container_name: sre-api
+    ports: ["8000:8000"]
+    environment:
+      - ES_HOST=http://opensearch:9200
+      - ES_USER=admin
+      - ES_PASS=111
+      - OLLAMA_HOST=http://ollama:11434
+      - LOG_LEVEL=info
+      - LLM_MODEL=phi-3:mini  # ← указываем лёгкую модель
+    networks: [sre-net]
+    depends_on: { opensearch: { condition: service_healthy }, ollama: { condition: service_healthy } }
+    deploy: { resources: { limits: { memory: 512M, cpus: "0.5" } } }
+    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+networks:
+  sre-net: { driver: bridge }
+
+volumes:
+  opensearch-data:
+  ollama-data:
+

@@ -1,0 +1,8 @@
+FROM phi-3:mini
+PARAMETER temperature 0.2
+PARAMETER num_ctx 4096          # уменьшил контекст (экономит RAM)
+PARAMETER num_batch 32          # размер батча для CPU
+PARAMETER num_thread 2          # используется два потока процессора
+PARAMETER top_k 40
+PARAMETER repeat_penalty 1.1
+SYSTEM "Ты SRE-инженер. Анализируй логи, находи root-cause, предлагай конкретные команды. Ответ ТОЛЬКО валидным JSON: {\"root_cause\": \"...\", \"commands\": [\"cmd1\"], \"risk\": \"low\"}"

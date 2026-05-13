@@ -1,0 +1,22 @@
+# infra/opensearch/opensearch.yml
+cluster.name: sre-diploma-cluster
+node.name: os-node-1
+
+# Network
+network.host: 0.0.0.0
+http.port: 9200
+
+# Discovery
+discovery.type: single-node
+
+# Memory
+bootstrap.memory_lock: false
+
+# Security - отключено для dev
+plugins.security.disabled: true
+
+# Path (опционально)
+path.data: /usr/share/opensearch/data
+path.logs: /usr/share/opensearch/logs
+
+
