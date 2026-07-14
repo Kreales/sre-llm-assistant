@@ -4,33 +4,40 @@ services:
     container_name: opensearch
     environment:
       - discovery.type=single-node
-      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=111
-      - plugins.security.disabled=true
-      - "ES_JAVA_OPTS=-Xms256m -Xmx256m"  # ↓ уменьшили с 512m
-      - bootstrap.memory_lock=false  # ↓ отключили для экономии
+      - plugins.security.disabled=true  # Отключаем безопасность на сервере
+      - "ES_JAVA_OPTS=-Xms256m -Xmx256m"
+      - bootstrap.memory_lock=false
+      # Важно для CORS, чтобы Dashboard мог стучаться без токенов
+      - http.cors.enabled=true
+      - http.cors.allow-origin="*" 
     ulimits:
       nofile: { soft: 65536, hard: 65536 }
-    ports: ["9200:9200"]
+    ports: 
+      - "9200:9200"
     volumes:
       - opensearch-data:/usr/share/opensearch/data
       - ./infra/opensearch/opensearch.yml:/usr/share/opensearch/config/opensearch.yml:ro
     networks: [sre-net]
     deploy:
       resources:
-        limits: { memory: 1.5G, cpus: "1" }  # ↓ CPU limit
+        limits: { memory: 1.5G, cpus: "1" }
         reservations: { memory: 512M, cpus: "0.5" }
     healthcheck:
       test: ["CMD-SHELL", "curl -f -u admin:111 http://localhost:9200/_cluster/health || exit 1"]
-      interval: 60s
+      interval: 30s
       timeout: 10s
-      retries: 10  # ↑ больше попыток, т.к. медленнее стартует
+      retries: 10
 
   opensearch-dashboards:
     image: opensearchproject/opensearch-dashboards:2.15.0
     container_name: dashboards
     environment:
-      - OPENSEARCH_HOSTS=["http://opensearch:9200"]
-    ports: ["5601:5601"]
+      - OPENSEARCH_HOSTS=http://opensearch:9200  
+      - OPENSEARCH_SECURITY_ENABLED=false         
+      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true   
+      - SERVER_SSL_ENABLED=false
+    ports:
+      - "5601:5601"
     networks: [sre-net]
     depends_on: { opensearch: { condition: service_healthy } }
     deploy: { resources: { limits: { memory: 400M, cpus: "0.4" } } }
@@ -64,7 +71,7 @@ services:
   sre-api:
     build: { context: ., dockerfile: Dockerfile.dev }
     container_name: sre-api
-    ports: ["8000:8000"]
+    ports: ["8001:8000"]
     environment:
       - ES_HOST=http://opensearch:9200
       - ES_USER=admin
