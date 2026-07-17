@@ -1,0 +1,115 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test-deployment:
+    runs-on: ubuntu-latest
+    services:
+      opensearch:
+        image: opensearchproject/opensearch:2.12.0
+        env:
+          OPENSEARCH_INITIAL_ADMIN_PASSWORD: 111
+          plugins.security.disabled: 'true'
+          bootstrap.memory_lock: 'false'
+          ES_JAVA_OPTS: '-Xms256m -Xmx256m'
+        ports: ["9200:9200"]
+        options: >-
+          --health-cmd "curl -f http://localhost:9200/_cluster/health || exit 1"
+          --health-interval 30s
+          --health-timeout 10s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Setup Docker
+        uses: docker/setup-docker-action@v3
+        with:
+          version: latest
+
+      - name: Install dependencies
+        run: |
+          pip install httpx
+
+      - name: Build sre-api image
+        run: |
+          docker build -t sre-api:latest -f Dockerfile.dev .
+
+      - name: Pull Ollama image
+        run: |
+          docker pull ollama/ollama:0.5.7
+
+      - name: Create network
+        run: |
+          docker network create sre-net || true
+
+      - name: Start Ollama container
+        run: |
+          docker run -d \
+            --name ollama \
+            --network sre-net \
+            -p 11434:11434 \
+            -v ollama-data:/root/.ollama \
+            ollama/ollama:0.5.7
+
+      - name: Wait for Ollama to be ready
+        run: |
+          timeout 120 bash -c 'until docker exec ollama curl -sf http://localhost:11434/health; do sleep 5; done'
+
+      - name: Pull tinyllama model
+        run: |
+          docker exec ollama ollama pull tinyllama
+
+      - name: Start sre-api container
+        run: |
+          docker run -d \
+            --name sre-api \
+            --network sre-net \
+            -p 8000:8000 \
+            -e ES_HOST=http://host.docker.internal:9200 \
+            -e OLLAMA_HOST=http://host.docker.internal:11434 \
+            sre-api:latest
+
+      - name: Wait for sre-api to be ready
+        run: |
+          timeout 180 bash -c 'until curl -sf http://localhost:8000/health; do sleep 5; done'
+
+      - name: Seed logs into OpenSearch
+        run: |
+          python scripts/seed_logs.py
+
+      - name: Test API endpoint
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:8000/api/v1/analyze \
+            -H "Content-Type: application/json" \
+            -d '{"hours": 0.1}')
+          echo "$RESPONSE"
+          
+          LOGS_COUNT=$(echo "$RESPONSE" | python -c "import sys, json; print(json.load(sys.stdin).get('logs_analyzed', 0))")
+          if [ "$LOGS_COUNT" -gt 0 ]; then
+            echo "✅ Success: API analyzed $LOGS_COUNT logs"
+          else
+            echo "❌ Failed: logs_analyzed is 0 or missing"
+            exit 1
+          fi
+          
+          REMEDIATION=$(echo "$RESPONSE" | python -c "import sys, json; r=json.load(sys.stdin); print('Found remediation:', 'root_cause' in r.get('remediation', {}))")
+          echo "$REMEDIATION"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop sre-api ollama || true
+          docker rm sre-api ollama || true
+          docker network rm sre-net || true
+          docker volume rm ollama-data || true
