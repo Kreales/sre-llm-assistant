@@ -78,7 +78,7 @@ services:
       - ES_PASS=111
       - OLLAMA_HOST=http://ollama:11434
       - LOG_LEVEL=info
-      - LLM_MODEL=tinyllama  # ← указываем лёгкую модель
+      - LLM_MODEL=phi3:mini  # ← указываем лёгкую модель
     networks: [sre-net]
     depends_on: { opensearch: { condition: service_healthy }, ollama: { condition: service_started } }
     deploy: { resources: { limits: { memory: 512M, cpus: "0.5" } } }

@@ -7,7 +7,7 @@ from typing import Dict, Any
 logger = logging.getLogger(__name__)
 
 class LLMClient:
-    def __init__(self, host: str = "http://ollama:11434", model: str = "tinyllama"):
+    def __init__(self, host: str = "http://ollama:11434", model: str = "gemma:2b"):
         self.host = host.rstrip("/")
         self.model = model
 
@@ -49,7 +49,7 @@ class LLMClient:
 
         try:
             # Увеличенный таймаут для 2 vCPU
-            with httpx.Client(timeout=120.0) as client:
+            with httpx.Client(timeout=300.0) as client:
                 response = client.post(f"{self.host}/api/chat", json=payload)
                 
                 # Проверяем статус ответа
@@ -69,29 +69,50 @@ class LLMClient:
                 if not raw_response:
                     return {"error": "LLM returned empty response", "raw": result}
 
-                # Ищем JSON в ответе (LLM может обернуть в ```json или просто вернуть объект)
-                json_match = re.search(r'\{(?:[^{}]|(?R))*\}', raw_response, re.DOTALL)
+                            # Ищем JSON в ответе
+            start_pos = raw_response.find('{')
+            if start_pos == -1:
+                return {"error": "No JSON object found in LLM response", "raw_response_snippet": raw_response[:200]}
+            
+            bracket_count = 0
+            end_pos = -1
+            for i, char in enumerate(raw_response[start_pos:], start=start_pos):
+                if char == '{':
+                    bracket_count += 1
+                elif char == '}':
+                    bracket_count -= 1
+                    if bracket_count == 0:
+                        end_pos = i
+                        break
+            
+            if end_pos != -1:
+                json_str = raw_response[start_pos:end_pos+1]
+            else:
+                # Если скобки не закрылись, пробуем regex как fallback
+                json_match = re.search(r'\{.*\}', raw_response, re.DOTALL)
                 if json_match:
                     json_str = json_match.group()
-                    # Попробуем распарсить
-                    try:
-                        parsed_json = json.loads(json_str)
-                        return parsed_json
-                    except json.JSONDecodeError:
-                        # Если не получилось, пробуем заменить одинарные кавычки
-                        try:
-                            fixed_str = json_str.replace("'", '"')
-                            return json.loads(fixed_str)
-                        except json.JSONDecodeError:
-                            return {
-                                "error": "Could not parse JSON from LLM response",
-                                "raw_response_snippet": raw_response[:200] + "..."
-                            }
                 else:
                     return {
                         "error": "LLM did not return valid JSON format",
                         "raw_response_snippet": raw_response[:200] + "..."
                     }
+
+            # Попробуем распарсить
+            try:
+                parsed_json = json.loads(json_str)
+                return parsed_json
+            except json.JSONDecodeError:
+                # Если не получилось, пробуем заменить одинарные кавычки
+                try:
+                    fixed_str = json_str.replace("'", '"')
+                    return json.loads(fixed_str)
+                except json.JSONDecodeError:
+                    return {
+                        "error": "Could not parse JSON from LLM response",
+                        "raw_response_snippet": raw_response[:200] + "..."
+                    }
+                        
 
         except httpx.TimeoutException:
             logger.error(f"LLM request timed out after 120s to {self.host}")
