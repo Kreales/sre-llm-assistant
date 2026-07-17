@@ -13,7 +13,7 @@ jobs:
       opensearch:
         image: opensearchproject/opensearch:2.12.0
         env:
-          OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${{ secrets.OPENSEARCH_PASSWORD }}
+          OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${{ secrets.OPENSEARCH_INITIAL_ADMIN_PASSWORD }}
           plugins.security.disabled: 'true'
           bootstrap.memory_lock: 'false'
           ES_JAVA_OPTS: '-Xms256m -Xmx256m'
