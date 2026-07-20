@@ -8,6 +8,8 @@ services:
       - "ES_JAVA_OPTS=-Xms256m -Xmx256m"
       - bootstrap.memory_lock=false
       - node.roles=master,data,ingest
+      - cluster.initial_master_nodes: ["os-node-1"]
+      - discovery.seed_hosts: ["127.0.0.1"]
       # Важно для CORS, чтобы Dashboard мог стучаться без токенов
       - http.cors.enabled=true
       - http.cors.allow-origin="*" 
