@@ -53,11 +53,39 @@ jobs:
             -e "discovery.seed_hosts=127.0.0.1" \
             opensearchproject/opensearch:2.12.0
 
-      - name: Wait for OpenSearch to be ready
+      - name: Debug OpenSearch startup
         run: |
-          timeout 240 bash -c 'until docker exec opensearch curl -sf http://localhost:9200/_cluster/health; do sleep 5; done'
-          echo "✅ OpenSearch is ready"
+           docker run -d \
+            --name opensearch-debug \
+            --network sre-net \
+            -p 9200:9200 \
+            --ulimit memlock=-1:-1 \
+            --ulimit nofile=65536:65536 \
+            -e OPENSEARCH_INITIAL_ADMIN_PASSWORD="${{ secrets.OPENSEARCH_INITIAL_ADMIN_PASSWORD }}" \
+            -e "plugins.security.disabled=true" \
+            -e "bootstrap.memory_lock=false" \
+            -e "ES_JAVA_OPTS=-Xms256m -Xmx256m" \
+            -e "discovery.type=single-node" \
+            -e "cluster.initial_master_nodes=os-node-1" \
+            -e "discovery.seed_hosts=127.0.0.1" \
+            opensearchproject/opensearch:2.12.0
 
+            sleep 30
+
+            echo "=== Docker ps ==="
+            docker ps -a --filter name=opensearch-debug
+
+            echo "=== Last 100 lines of logs ==="
+            docker logs opensearch-debug --tail 100
+
+            echo "=== Health check attempt ==="
+            curl -v http://localhost:9200/_cluster/health || echo "Health check failed"
+
+            echo "=== JVM args ==="
+            docker exec opensearch-debug ps aux | grep java
+
+            docker rm -f opensearch-debug
+            
       # 3. Ollama с предзагрузкой модели через ENV
       - name: Start Ollama with preloaded model
         run: |
