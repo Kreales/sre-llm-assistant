@@ -8,6 +8,7 @@ http.port: 9200
 
 # Memory
 bootstrap.memory_lock: false
+node.roles: [master, data, ingest]
 
 # Security - отключено для dev
 plugins.security.disabled: true
