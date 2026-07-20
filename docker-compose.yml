@@ -9,8 +9,6 @@ services:
       bootstrap.memory_lock: "false"
       http.cors.enabled: "true"
       http.cors.allow-origin: "*"
-      cluster.initial_master_nodes: "os-node-1"
-      discovery.seed_hosts: "127.0.0.1" 
     ulimits:
       nofile: { soft: 65536, hard: 65536 }
     ports: 
