@@ -3,10 +3,8 @@ services:
     image: opensearchproject/opensearch:2.15.0
     container_name: opensearch
     environment:
-      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=MyStr0ngP@ssw0rd!2026
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=MyStr0ngPassw0rd!2026
       - discovery.type=single-node
-      - cluster.initial_master_nodes=opensearch-node1
-      - node.name=opensearch-node1
       - plugins.security.disabled=true  # Отключаем безопасность на сервере
       - "ES_JAVA_OPTS=-Xms256m -Xmx256m"
       - bootstrap.memory_lock=false
@@ -26,16 +24,16 @@ services:
         limits: { memory: 1.5G, cpus: "1" }
         reservations: { memory: 512M, cpus: "0.5" }
     healthcheck:
-      test: ["CMD-SHELL", "curl -f -u admin:111 http://localhost:9200/_cluster/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
+      test: ["CMD-SHELL", "curl -f -u admin:MyStr0ngPassw0rd!2026 http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
 
   opensearch-dashboards:
     image: opensearchproject/opensearch-dashboards:2.15.0
     container_name: dashboards
     environment:
-      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=DevPass@2026!Secure#LLM
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=MyStr0ngPassw0rd!2026
       - OPENSEARCH_HOSTS=http://opensearch:9200  
       - OPENSEARCH_SECURITY_ENABLED=false         
       - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true   
