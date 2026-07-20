@@ -9,84 +9,89 @@ on:
 jobs:
   test-deployment:
     runs-on: ubuntu-latest
-    services:
-      opensearch:
-        image: opensearchproject/opensearch:2.12.0
-        env:
-          OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${{ secrets.OPENSEARCH_INITIAL_ADMIN_PASSWORD }}
-          plugins.security.disabled: 'true'
-          bootstrap.memory_lock: 'false'
-          ES_JAVA_OPTS: '-Xms256m -Xmx256m'
-        ports: ["9200:9200"]
-        options: >-
-          --health-cmd "curl -f http://localhost:9200/_cluster/health || exit 1"
-          --health-interval 30s
-          --health-timeout 10s
-          --health-retries 5
 
     steps:
       - uses: actions/checkout@v4
+
+      # 1. Настраиваем ядро хоста ДО запуска контейнеров
+      # Это критически важно для OpenSearch в GitHub Actions
+      - name: Configure kernel parameters for OpenSearch
+        run: |
+          sudo sysctl -w vm.max_map_count=262144
+          echo "vm.max_map_count = $(sysctl vm.max_map_count)"
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Setup Docker
-        uses: docker/setup-docker-action@v3
-        with:
-          version: latest
-
       - name: Install dependencies
-        run: |
-          pip install httpx
+        run: pip install httpx
 
       - name: Build sre-api image
-        run: |
-          docker build -t sre-api:latest -f Dockerfile.dev .
+        run: docker build -t sre-api:latest -f Dockerfile.dev .
 
-      - name: Pull Ollama image
-        run: |
-          docker pull ollama/ollama:0.5.7
+      - name: Create shared network
+        run: docker network create sre-net
 
-      - name: Create network
+      # 2. Запускаем OpenSearch с правильными ulimits
+      # Используем docker run вместо services для полного контроля
+      - name: Start OpenSearch
         run: |
-          docker network create sre-net || true
+          docker run -d \
+            --name opensearch \
+            --network sre-net \
+            -p 9200:9200 \
+            --ulimit memlock=-1:-1 \
+            --ulimit nofile=65536:65536 \
+            -e OPENSEARCH_INITIAL_ADMIN_PASSWORD="${{ secrets.OPENSEARCH_INITIAL_ADMIN_PASSWORD }}" \
+            -e "plugins.security.disabled=true" \
+            -e "bootstrap.memory_lock=false" \
+            -e "ES_JAVA_OPTS=-Xms256m -Xmx256m" \
+            -e "discovery.type=single-node" \
+            -e "cluster.initial_master_nodes=os-node-1" \
+            -e "discovery.seed_hosts=127.0.0.1" \
+            opensearchproject/opensearch:2.12.0
 
-      - name: Start Ollama container
+      - name: Wait for OpenSearch to be ready
+        run: |
+          timeout 120 bash -c 'until curl -sf http://localhost:9200/_cluster/health; do sleep 5; done'
+          echo " OpenSearch is ready"
+
+      # 3. Ollama с предзагрузкой модели через ENV
+      - name: Start Ollama with preloaded model
         run: |
           docker run -d \
             --name ollama \
             --network sre-net \
             -p 11434:11434 \
             -v ollama-data:/root/.ollama \
-            ollama/ollama:0.5.7
+            -e OLLAMA_KEEP_ALIVE=-1 \
+            ollama/ollama:0.5.7 ollama run gemma:2b ""
 
       - name: Wait for Ollama to be ready
         run: |
-          timeout 120 bash -c 'until docker exec ollama curl -sf http://localhost:11434/health; do sleep 5; done'
+          timeout 180 bash -c 'until docker exec ollama curl -sf http://localhost:11434/api/tags | grep -q gemma:2b; do sleep 5; done'
+          echo " Ollama with gemma is ready"
 
-      - name: Pull tinyllama model
-        run: |
-          docker exec ollama ollama pull tinyllama
-
+      # 4. API подключается к сервисам по ИМЕНАМ в общей сети
       - name: Start sre-api container
         run: |
           docker run -d \
             --name sre-api \
             --network sre-net \
             -p 8000:8000 \
-            -e ES_HOST=http://host.docker.internal:9200 \
-            -e OLLAMA_HOST=http://host.docker.internal:11434 \
+            -e ES_HOST=http://opensearch:9200 \
+            -e OLLAMA_HOST=http://ollama:11434 \
             sre-api:latest
 
       - name: Wait for sre-api to be ready
         run: |
-          timeout 180 bash -c 'until curl -sf http://localhost:8000/health; do sleep 5; done'
+          timeout 120 bash -c 'until curl -sf http://localhost:8000/health; do sleep 5; done'
+          echo " SRE API is ready"
 
       - name: Seed logs into OpenSearch
-        run: |
-          python scripts/seed_logs.py
+        run: python scripts/seed_logs.py
 
       - name: Test API endpoint
         run: |
@@ -97,9 +102,9 @@ jobs:
           
           LOGS_COUNT=$(echo "$RESPONSE" | python -c "import sys, json; print(json.load(sys.stdin).get('logs_analyzed', 0))")
           if [ "$LOGS_COUNT" -gt 0 ]; then
-            echo "✅ Success: API analyzed $LOGS_COUNT logs"
+            echo " Success: API analyzed $LOGS_COUNT logs"
           else
-            echo "❌ Failed: logs_analyzed is 0 or missing"
+            echo " Failed: logs_analyzed is 0 or missing"
             exit 1
           fi
           
@@ -109,7 +114,7 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker stop sre-api ollama || true
-          docker rm sre-api ollama || true
+          docker stop sre-api ollama opensearch || true
+          docker rm sre-api ollama opensearch || true
           docker network rm sre-net || true
           docker volume rm ollama-data || true
