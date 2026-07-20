@@ -1,21 +1,27 @@
-# infra/opensearch/opensearch.yml
 cluster.name: sre-diploma-cluster
-node.name: os-node-1
 
-# Network
+
+node.name: os-node-1
+node.roles: [master, data, ingest]
+
 network.host: 0.0.0.0
 http.port: 9200
 
-# Memory
-bootstrap.memory_lock: false
+discovery.type: single-node
 cluster.initial_master_nodes: ["os-node-1"]
 discovery.seed_hosts: ["127.0.0.1"]
 
-# Security - отключено для dev
+
+bootstrap.memory_lock: false
+
+
+# Отключаем плагин безопасности для локальной разработки
 plugins.security.disabled: true
 
-# Path (опционально)
+
 path.data: /usr/share/opensearch/data
 path.logs: /usr/share/opensearch/logs
 
+http.cors.enabled: true
+http.cors.allow-origin: "*"
 
