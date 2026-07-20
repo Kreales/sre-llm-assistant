@@ -6,9 +6,6 @@ node.name: os-node-1
 network.host: 0.0.0.0
 http.port: 9200
 
-# Discovery
-discovery.type: single-node
-
 # Memory
 bootstrap.memory_lock: false
 
