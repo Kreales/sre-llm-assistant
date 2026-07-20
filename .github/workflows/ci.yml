@@ -55,36 +55,24 @@ jobs:
 
       - name: Debug OpenSearch startup
         run: |
-           docker run -d \
-            --name opensearch-debug \
-            --network sre-net \
-            -p 9200:9200 \
-            --ulimit memlock=-1:-1 \
-            --ulimit nofile=65536:65536 \
-            -e OPENSEARCH_INITIAL_ADMIN_PASSWORD="${{ secrets.OPENSEARCH_INITIAL_ADMIN_PASSWORD }}" \
-            -e "plugins.security.disabled=true" \
-            -e "bootstrap.memory_lock=false" \
-            -e "ES_JAVA_OPTS=-Xms256m -Xmx256m" \
-            -e "discovery.type=single-node" \
-            -e "cluster.initial_master_nodes=os-node-1" \
-            -e "discovery.seed_hosts=127.0.0.1" \
-            opensearchproject/opensearch:2.12.0
-
-            sleep 30
-
             echo "=== Docker ps ==="
-            docker ps -a --filter name=opensearch-debug
+            docker ps -a --filter name=opensearch
 
-            echo "=== Last 100 lines of logs ==="
-            docker logs opensearch-debug --tail 100
+            echo "=== Last 150 lines of logs ==="
+            docker logs opensearch --tail 150
 
             echo "=== Health check attempt ==="
             curl -v http://localhost:9200/_cluster/health || echo "Health check failed"
 
-            echo "=== JVM args ==="
-            docker exec opensearch-debug ps aux | grep java
+            echo "=== Container inspect (network) ==="
+            docker inspect opensearch --format='{{json .NetworkSettings.Networks}}' | python3 -m json.tool
 
-            docker rm -f opensearch-debug
+            echo "=== Is port 9200 bound? ==="
+            ss -tlnp | grep 9200 || netstat -tlnp | grep 9200 || echo "Port 9200 not found in host netstat"
+
+  
+            echo "=== Processes inside container ==="
+            docker exec opensearch ps aux | grep -E "java|opensearch" || echo "No java process found"
             
       # 3. Ollama с предзагрузкой модели через ENV
       - name: Start Ollama with preloaded model
