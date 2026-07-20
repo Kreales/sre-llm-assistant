@@ -55,8 +55,8 @@ jobs:
 
       - name: Wait for OpenSearch to be ready
         run: |
-          timeout 120 bash -c 'until curl -sf http://localhost:9200/_cluster/health; do sleep 5; done'
-          echo " OpenSearch is ready"
+          timeout 120 bash -c 'until docker exec opensearch curl -sf http://localhost:9200/_cluster/health; do sleep 5; done'
+          echo "✅ OpenSearch is ready"
 
       # 3. Ollama с предзагрузкой модели через ENV
       - name: Start Ollama with preloaded model
