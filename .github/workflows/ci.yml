@@ -58,9 +58,10 @@ jobs:
 
       - name: Wait for OpenSearch
         run: |
+          sudo apt-get update && sudo apt-get install -y curl > /dev/null 2>&1 || true
           echo "Waiting for OpenSearch..."
           for i in {1..100}; do
-          if curl -sf http://localhost:9200/_cluster/health | grep -q "green\|yellow"; then
+          if curl -sf --ipv4 http://127.0.0.1:9200/_cluster/health | grep -q "green\|yellow"; then
             echo " OpenSearch is ready after $((i * 5)) seconds"
             break
           fi
