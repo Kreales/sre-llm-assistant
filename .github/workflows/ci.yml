@@ -51,7 +51,6 @@ jobs:
          --ulimit nofile=65536:65536 \
          -e "bootstrap.memory_lock=false" \
          -e "ES_JAVA_OPTS=-Xms128m -Xmx128m -Dopensearch_security.disabled=true" \
-         -e "discovery.type=single-node" \
          -e "cluster.initial_master_nodes=os-node-1" \
          -e "discovery.seed_hosts=127.0.0.1" \
          -e "OPENSEARCH_INITIAL_ADMIN_PASSWORD=MyStr0ngPassw0rd!2026" \
