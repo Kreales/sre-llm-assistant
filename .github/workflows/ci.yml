@@ -97,7 +97,7 @@ jobs:
          docker exec opensearch ps aux | grep -E "[j]ava|[o]pensearch" || echo "❌ No Java process found inside container"
 
          echo "=== FINAL HEALTH CHECK ==="
-         if curl -sf --ipv4 http://127.0.0.1:9200/_cluster/health > /dev/null 2>&1; then
+         if curl -sf --ipv4 http://$OPENSEARCH_IP:9200/_cluster/health > /dev/null 2>&1; then
           echo "✅ OpenSearch is ALIVE and responding"
          else
            echo " OpenSearch is NOT responding to health check"
