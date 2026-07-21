@@ -7,7 +7,7 @@ node.roles: [master, data, ingest]
 network.host: 0.0.0.0
 http.port: 9200
 
-discovery.type: single-node
+
 cluster.initial_master_nodes: ["os-node-1"]
 discovery.seed_hosts: ["127.0.0.1"]
 
