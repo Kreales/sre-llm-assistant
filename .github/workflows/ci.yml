@@ -54,7 +54,7 @@ jobs:
          -e "discovery.type=single-node" \
          -e "cluster.initial_master_nodes=os-node-1" \
          -e "discovery.seed_hosts=127.0.0.1" \
-         -e "OPENSEARCH_INITIAL_ADMIN_PASSWORD=MyStr0ngPassw0rd!2026"
+         -e "OPENSEARCH_INITIAL_ADMIN_PASSWORD=MyStr0ngPassw0rd!2026" \
          opensearchproject/opensearch:2.12.0
 
          echo " Waiting 40s for JVM initialization..."
