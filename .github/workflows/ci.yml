@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: CI/CD Pipeline - SRE LLM Assistant
 
 on:
   push:
@@ -9,21 +9,26 @@ on:
 jobs:
   test-deployment:
     runs-on: ubuntu-latest
+    
+    # Ограничиваем ресурсы, чтобы не убить раннер
+    env:
+      JAVA_OPTS: "-Xms128m -Xmx128m" 
 
     steps:
       - uses: actions/checkout@v4
 
-      # 1. Настраиваем ядро хоста ДО запуска контейнеров
-      # Это критически важно для OpenSearch в GitHub Actions
-      - name: Configure kernel parameters for OpenSearch
+      # 1. КРИТИЧЕСКИ ВАЖНО: Настройка ядра Linux для OpenSearch
+      # Без этого OpenSearch падает с bootstrap checks failed
+      - name: Configure kernel parameters
         run: |
           sudo sysctl -w vm.max_map_count=262144
-          echo "vm.max_map_count = $(sysctl vm.max_map_count)"
+          echo "vm.max_map_count set to $(sysctl vm.max_map_count)"
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+          cache: 'pip'
 
       - name: Install dependencies
         run: pip install httpx
@@ -34,8 +39,8 @@ jobs:
       - name: Create shared network
         run: docker network create sre-net
 
-      # 2. Запускаем OpenSearch с правильными ulimits
-      # Используем docker run вместо services для полного контроля
+      # 2. Запуск OpenSearch (исправленная версия)
+      # Используем JVM-flag для отключения security, чтобы избежать зависания на генерации сертификатов
       - name: Start OpenSearch
         run: |
           docker run -d \
@@ -44,8 +49,6 @@ jobs:
             -p 9200:9200 \
             --ulimit memlock=-1:-1 \
             --ulimit nofile=65536:65536 \
-            -e OPENSEARCH_INITIAL_ADMIN_PASSWORD="${{ secrets.OPENSEARCH_INITIAL_ADMIN_PASSWORD }}" \
-            -e "plugins.security.disabled=true" \
             -e "bootstrap.memory_lock=false" \
             -e "ES_JAVA_OPTS=-Xms256m -Xmx256m -Dopensearch_security.disabled=true" \
             -e "discovery.type=single-node" \
@@ -53,29 +56,15 @@ jobs:
             -e "discovery.seed_hosts=127.0.0.1" \
             opensearchproject/opensearch:2.12.0
 
-      - name: Debug OpenSearch startup
+      - name: Wait for OpenSearch
         run: |
-            echo "=== Docker ps ==="
-            docker ps -a --filter name=opensearch
+          echo "Waiting for OpenSearch..."
+          timeout 120 bash -c 'until curl -sf http://localhost:9200/_cluster/health | grep -q "green\|yellow"; do sleep 5; done'
+          echo "✅ OpenSearch is ready"
 
-            echo "=== Last 150 lines of logs ==="
-            docker logs opensearch --tail 150
-
-            echo "=== Health check attempt ==="
-            curl -v http://localhost:9200/_cluster/health || echo "Health check failed"
-
-            echo "=== Container inspect (network) ==="
-            docker inspect opensearch --format='{{json .NetworkSettings.Networks}}' | python3 -m json.tool
-
-            echo "=== Is port 9200 bound? ==="
-            ss -tlnp | grep 9200 || netstat -tlnp | grep 9200 || echo "Port 9200 not found in host netstat"
-
-  
-            echo "=== Processes inside container ==="
-            docker exec opensearch ps aux | grep -E "java|opensearch" || echo "No java process found"
-            
-      # 3. Ollama с предзагрузкой модели через ENV
-      - name: Start Ollama with preloaded model
+      # 3. Запуск Ollama с ПРЕДЗАГРУЗКОЙ модели
+      # Модель скачивается внутри контейнера при старте, не нужен отдельный шаг docker exec
+      - name: Start Ollama
         run: |
           docker run -d \
             --name ollama \
@@ -83,15 +72,17 @@ jobs:
             -p 11434:11434 \
             -v ollama-data:/root/.ollama \
             -e OLLAMA_KEEP_ALIVE=-1 \
-            ollama/ollama:0.5.7 ollama run gemma:2b ""
+            ollama/ollama:0.5.7 ollama run tinyllama ""
 
-      - name: Wait for Ollama to be ready
+      - name: Wait for Ollama & Model
         run: |
-          timeout 180 bash -c 'until docker exec ollama curl -sf http://localhost:11434/api/tags | grep -q gemma:2b; do sleep 5; done'
-          echo " Ollama with gemma is ready"
+          echo "Waiting for Ollama and tinyllama model..."
+          timeout 180 bash -c 'until docker exec ollama ollama list | grep -q tinyllama; do sleep 5; done'
+          echo "✅ Ollama with tinyllama is ready"
 
-      # 4. API подключается к сервисам по ИМЕНАМ в общей сети
-      - name: Start sre-api container
+      # 4. Запуск API
+      # Используем имена сервисов в сети sre-net, а не host.docker.internal
+      - name: Start sre-api
         run: |
           docker run -d \
             --name sre-api \
@@ -101,11 +92,12 @@ jobs:
             -e OLLAMA_HOST=http://ollama:11434 \
             sre-api:latest
 
-      - name: Wait for sre-api to be ready
+      - name: Wait for sre-api
         run: |
-          timeout 120 bash -c 'until curl -sf http://localhost:8000/health; do sleep 5; done'
-          echo " SRE API is ready"
+          timeout 60 bash -c 'until curl -sf http://localhost:8000/health; do sleep 3; done'
+          echo "✅ SRE API is ready"
 
+      # 5. Тесты
       - name: Seed logs into OpenSearch
         run: python scripts/seed_logs.py
 
@@ -114,19 +106,19 @@ jobs:
           RESPONSE=$(curl -s -X POST http://localhost:8000/api/v1/analyze \
             -H "Content-Type: application/json" \
             -d '{"hours": 0.1}')
-          echo "$RESPONSE"
+          
+          echo "Response: $RESPONSE"
           
           LOGS_COUNT=$(echo "$RESPONSE" | python -c "import sys, json; print(json.load(sys.stdin).get('logs_analyzed', 0))")
+          
           if [ "$LOGS_COUNT" -gt 0 ]; then
-            echo " Success: API analyzed $LOGS_COUNT logs"
+            echo "✅ Success: API analyzed $LOGS_COUNT logs"
           else
-            echo " Failed: logs_analyzed is 0 or missing"
+            echo "❌ Failed: logs_analyzed is 0 or missing"
             exit 1
           fi
-          
-          REMEDIATION=$(echo "$RESPONSE" | python -c "import sys, json; r=json.load(sys.stdin); print('Found remediation:', 'root_cause' in r.get('remediation', {}))")
-          echo "$REMEDIATION"
 
+      # 6. Очистка (всегда выполняется)
       - name: Cleanup
         if: always()
         run: |
