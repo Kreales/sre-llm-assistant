@@ -59,8 +59,14 @@ jobs:
       - name: Wait for OpenSearch
         run: |
           echo "Waiting for OpenSearch..."
-          timeout 120 bash -c 'until curl -sf http://localhost:9200/_cluster/health | grep -q "green\|yellow"; do sleep 5; done'
-          echo "✅ OpenSearch is ready"
+          for i in {1..100}; do
+          if curl -sf http://localhost:9200/_cluster/health | grep -q "green\|yellow"; then
+            echo " OpenSearch is ready after $((i * 5)) seconds"
+            break
+          fi
+          echo "⏳ Still waiting... ($((i * 5))s)"
+          sleep 5
+        done
 
       # 3. Запуск Ollama с ПРЕДЗАГРУЗКОЙ модели
       # Модель скачивается внутри контейнера при старте, не нужен отдельный шаг docker exec
