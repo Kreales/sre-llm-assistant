@@ -44,13 +44,22 @@ jobs:
 
       # 3. ПРОВЕРКИ И ТЕСТИРОВАНИЕ
       # Инфраструктура уже гарантированно готова благодаря --wait выше
-      
+
+      - name: Pull ollama model
+        run: docker exec ollama ollama pull gemma:2b
+
+      - name: Setup indices
+        run: bash scripts/setup_indices.sh
+
+      - name: Setup opensearch
+        run: bash scripts/setup_opensearch.sh
+
       - name: Seed logs into OpenSearch
         run: python scripts/seed_logs.py
 
       - name: Test API endpoint
         run: |
-          RESPONSE=$(curl -s -X POST http://localhost:8000/api/v1/analyze \
+          RESPONSE=$(curl -s -X POST http://localhost:8001/api/v1/analyze \
             -H "Content-Type: application/json" \
             -d '{"hours": 0.1}')
           
