@@ -9,20 +9,16 @@ on:
 jobs:
   test-deployment:
     runs-on: ubuntu-latest
-    
-    # Ограничиваем ресурсы, чтобы не убить раннер
-    env:
-      JAVA_OPTS: "-Xms128m -Xmx128m" 
 
     steps:
       - uses: actions/checkout@v4
 
       # 1. КРИТИЧЕСКИ ВАЖНО: Настройка ядра Linux для OpenSearch
-      # Без этого OpenSearch падает с bootstrap checks failed
-      - name: Configure kernel parameters
+      # Без этого шага OpenSearch упадет с bootstrap checks failed еще до старта
+      - name: Configure kernel parameters for OpenSearch
         run: |
           sudo sysctl -w vm.max_map_count=262144
-          echo "vm.max_map_count set to $(sysctl vm.max_map_count)"
+          echo "✅ vm.max_map_count set to $(sysctl vm.max_map_count)"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -30,116 +26,23 @@ jobs:
           python-version: '3.10'
           cache: 'pip'
 
-      - name: Install dependencies
+      - name: Install test dependencies
         run: pip install httpx
 
-      - name: Build sre-api image
-        run: docker build -t sre-api:latest -f Dockerfile.dev .
-
-      - name: Create shared network
-        run: docker network create sre-net
-
-      # 2. Запуск OpenSearch (исправленная версия)
-      # Используем JVM-flag для отключения security, чтобы избежать зависания на генерации сертификатов
-      - name: Start and Diagnose OpenSearch
+      # 2. ЕДИНЫЙ ЗАПУСК ВСЕЙ ИНФРАСТРУКТУРЫ
+      # --wait дожидается прохождения всех healthcheck'ов из docker-compose.yml
+      # --abort-on-container-exit останавливает всё, если какой-то сервис упал
+      - name: Start infrastructure via Docker Compose
         run: |
-         docker run -d \
-         --name opensearch \
-         --network sre-net \
-         -p 9200:9200 \
-         --ulimit memlock=-1:-1 \
-         --ulimit nofile=65536:65536 \
-         -e "bootstrap.memory_lock=false" \
-         -e "ES_JAVA_OPTS=-Xms128m -Xmx128m -Dopensearch_security.disabled=true" \
-         -e "cluster.initial_master_nodes=os-node-1" \
-         -e "OPENSEARCH_INITIAL_ADMIN_PASSWORD=MyStr0ngPassw0rd!2026" \
-         opensearchproject/opensearch:2.12.0
+          echo "Building and starting all services..."
+          docker compose up -d --build --wait --abort-on-container-exit
+          
+          echo "✅ All containers are healthy and ready"
+          docker compose ps
 
-         sleep 5
-         
-         OPENSEARCH_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' opensearch)
-         echo "Detected OpenSearch IP: $OPENSEARCH_IP"
-
-         docker stop opensearch && docker rm opensearch
-    
-         docker run -d \
-         --name opensearch \
-         --network sre-net \
-         -p 9200:9200 \
-         --ulimit memlock=-1:-1 \
-         --ulimit nofile=65536:65536 \
-         -e "node.name=os-node-1" \
-         -e "bootstrap.memory_lock=false" \
-         -e "ES_JAVA_OPTS=-Xms128m -Xmx128m -Dopensearch_security.disabled=true" \
-         -e "cluster.initial_master_nodes=os-node-1" \
-         -e "discovery.seed_hosts=$OPENSEARCH_IP" \
-         -e "OPENSEARCH_INITIAL_ADMIN_PASSWORD=MyStr0ngPassw0rd!2026" \
-         opensearchproject/opensearch:2.12.0
-
-         echo "OpenSearch started with seed_hosts=$OPENSEARCH_IP"
-
-         echo " Waiting 40s for JVM initialization..."
-         sleep 40
-
-         echo "=== CONTAINER STATUS ==="
-         docker ps -a --filter name=opensearch --format "table {{.Status}}\t{{.Names}}"
-
-         echo "=== HOST MEMORY ==="
-         free -h
-
-         echo "=== PORT CHECK ==="
-         ss -tlnp | grep 9200 || echo "❌ Port 9200 NOT listening on host"
-
-         echo "=== LAST 100 LINES OF LOGS ==="
-         docker logs opensearch --tail 100
-
-         echo "=== JAVA PROCESS INSIDE ==="
-         docker exec opensearch ps aux | grep -E "[j]ava|[o]pensearch" || echo "❌ No Java process found inside container"
-
-         echo "=== FINAL HEALTH CHECK ==="
-         if curl -f -u admin:MyStr0ngPassw0rd!2026 http://$OPENSEARCH_IP:9200/_cluster/health; then
-          echo "✅ OpenSearch is ALIVE and responding"
-         else
-           echo " OpenSearch is NOT responding to health check"
-           exit 1
-         fi
-
-      # 3. Запуск Ollama с ПРЕДЗАГРУЗКОЙ модели
-      # Модель скачивается внутри контейнера при старте, не нужен отдельный шаг docker exec
-      - name: Start Ollama
-        run: |
-          docker run -d \
-            --name ollama \
-            --network sre-net \
-            -p 11434:11434 \
-            -v ollama-data:/root/.ollama \
-            -e OLLAMA_KEEP_ALIVE=-1 \
-            ollama/ollama:0.5.7 ollama run tinyllama ""
-
-      - name: Wait for Ollama & Model
-        run: |
-          echo "Waiting for Ollama and tinyllama model..."
-          timeout 180 bash -c 'until docker exec ollama ollama list | grep -q tinyllama; do sleep 5; done'
-          echo "✅ Ollama with tinyllama is ready"
-
-      # 4. Запуск API
-      # Используем имена сервисов в сети sre-net, а не host.docker.internal
-      - name: Start sre-api
-        run: |
-          docker run -d \
-            --name sre-api \
-            --network sre-net \
-            -p 8000:8000 \
-            -e ES_HOST=http://opensearch:9200 \
-            -e OLLAMA_HOST=http://ollama:11434 \
-            sre-api:latest
-
-      - name: Wait for sre-api
-        run: |
-          timeout 60 bash -c 'until curl -sf http://localhost:8000/health; do sleep 3; done'
-          echo "✅ SRE API is ready"
-
-      # 5. Тесты
+      # 3. ПРОВЕРКИ И ТЕСТИРОВАНИЕ
+      # Инфраструктура уже гарантированно готова благодаря --wait выше
+      
       - name: Seed logs into OpenSearch
         run: python scripts/seed_logs.py
 
@@ -149,7 +52,7 @@ jobs:
             -H "Content-Type: application/json" \
             -d '{"hours": 0.1}')
           
-          echo "Response: $RESPONSE"
+          echo "API Response: $RESPONSE"
           
           LOGS_COUNT=$(echo "$RESPONSE" | python -c "import sys, json; print(json.load(sys.stdin).get('logs_analyzed', 0))")
           
@@ -160,11 +63,10 @@ jobs:
             exit 1
           fi
 
-      # 6. Очистка (всегда выполняется)
-      - name: Cleanup
+      # 4. ОЧИСТКА (всегда выполняется, даже при падении тестов)
+      - name: Cleanup infrastructure
         if: always()
         run: |
-          docker stop sre-api ollama opensearch || true
-          docker rm sre-api ollama opensearch || true
-          docker network rm sre-net || true
-          docker volume rm ollama-data || true
+          echo "Stopping and removing all containers and volumes..."
+          docker compose down -v
+          echo "✅ Cleanup completed"
