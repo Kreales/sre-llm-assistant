@@ -41,39 +41,46 @@ jobs:
 
       # 2. Запуск OpenSearch (исправленная версия)
       # Используем JVM-flag для отключения security, чтобы избежать зависания на генерации сертификатов
-      - name: Start OpenSearch
+      - name: Start and Diagnose OpenSearch
         run: |
-          docker run -d \
-            --name opensearch \
-            --network sre-net \
-            -p 9200:9200 \
-            --ulimit memlock=-1:-1 \
-            --ulimit nofile=65536:65536 \
-            -e "bootstrap.memory_lock=false" \
-            -e "ES_JAVA_OPTS=-Xms256m -Xmx256m -Dopensearch_security.disabled=true" \
-            -e "discovery.type=single-node" \
-            -e "cluster.initial_master_nodes=os-node-1" \
-            -e "discovery.seed_hosts=127.0.0.1" \
-            opensearchproject/opensearch:2.12.0
+         docker run -d \
+         --name opensearch \
+         --network sre-net \
+         -p 9200:9200 \
+         --ulimit memlock=-1:-1 \
+         --ulimit nofile=65536:65536 \
+         -e "bootstrap.memory_lock=false" \
+         -e "ES_JAVA_OPTS=-Xms128m -Xmx128m -Dopensearch_security.disabled=true" \
+         -e "discovery.type=single-node" \
+         -e "cluster.initial_master_nodes=os-node-1" \
+         -e "discovery.seed_hosts=127.0.0.1" \
+         opensearchproject/opensearch:2.12.0
 
-      - name: Wait for OpenSearch
-        run: |
-          python3 -c "
-          import time, urllib.request
-          start = time.time()
-          while time.time() - start < 300:
-              try:
-                  resp = urllib.request.urlopen('http://127.0.0.1:9200/_cluster/health', timeout=5)
-                  if resp.status == 200:
-                      print('✅ OpenSearch is ready')
-                      exit(0)
-              except:
-                  pass
-              print(f'⏳ Waiting... ({int(time.time()-start)}s)')
-              time.sleep(5)
-          print('❌ Timeout waiting for OpenSearch')
-          exit(1)
-          "
+         echo " Waiting 40s for JVM initialization..."
+         sleep 40
+
+         echo "=== CONTAINER STATUS ==="
+         docker ps -a --filter name=opensearch --format "table {{.Status}}\t{{.Names}}"
+
+         echo "=== HOST MEMORY ==="
+         free -h
+
+         echo "=== PORT CHECK ==="
+         ss -tlnp | grep 9200 || echo "❌ Port 9200 NOT listening on host"
+
+         echo "=== LAST 100 LINES OF LOGS ==="
+         docker logs opensearch --tail 100
+
+         echo "=== JAVA PROCESS INSIDE ==="
+         docker exec opensearch ps aux | grep -E "[j]ava|[o]pensearch" || echo "❌ No Java process found inside container"
+
+         echo "=== FINAL HEALTH CHECK ==="
+         if curl -sf --ipv4 http://127.0.0.1:9200/_cluster/health > /dev/null 2>&1; then
+          echo "✅ OpenSearch is ALIVE and responding"
+         else
+           echo " OpenSearch is NOT responding to health check"
+           exit 1
+         fi
 
       # 3. Запуск Ollama с ПРЕДЗАГРУЗКОЙ модели
       # Модель скачивается внутри контейнера при старте, не нужен отдельный шаг docker exec
