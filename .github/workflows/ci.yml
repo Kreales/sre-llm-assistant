@@ -57,17 +57,23 @@ jobs:
             opensearchproject/opensearch:2.12.0
 
       - name: Wait for OpenSearch
-        run: |
-          sudo apt-get update && sudo apt-get install -y curl > /dev/null 2>&1 || true
-          echo "Waiting for OpenSearch..."
-          for i in {1..100}; do
-          if curl -sf --ipv4 http://127.0.0.1:9200/_cluster/health | grep -q "green\|yellow"; then
-            echo " OpenSearch is ready after $((i * 5)) seconds"
-            break
-          fi
-          echo "⏳ Still waiting... ($((i * 5))s)"
-          sleep 5
-          done
+      - run: |
+          python3 -c "
+          import time, urllib.request
+          start = time.time()
+          while time.time() - start < 300:
+              try:
+                  resp = urllib.request.urlopen('http://127.0.0.1:9200/_cluster/health', timeout=5)
+                  if resp.status == 200:
+                      print('✅ OpenSearch is ready')
+                      exit(0)
+              except:
+                  pass
+              print(f'⏳ Waiting... ({int(time.time()-start)}s)')
+              time.sleep(5)
+          print('❌ Timeout waiting for OpenSearch')
+          exit(1)
+          "
 
       # 3. Запуск Ollama с ПРЕДЗАГРУЗКОЙ модели
       # Модель скачивается внутри контейнера при старте, не нужен отдельный шаг docker exec
