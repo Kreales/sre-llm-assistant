@@ -52,9 +52,30 @@ jobs:
          -e "bootstrap.memory_lock=false" \
          -e "ES_JAVA_OPTS=-Xms128m -Xmx128m -Dopensearch_security.disabled=true" \
          -e "cluster.initial_master_nodes=os-node-1" \
-         -e "discovery.seed_hosts=_local_" \
          -e "OPENSEARCH_INITIAL_ADMIN_PASSWORD=MyStr0ngPassw0rd!2026" \
          opensearchproject/opensearch:2.12.0
+
+         sleep 5
+         
+         OPENSEARCH_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' opensearch)
+         echo "Detected OpenSearch IP: $OPENSEARCH_IP"
+
+         docker stop opensearch && docker rm opensearch
+    
+         docker run -d \
+         --name opensearch \
+         --network sre-net \
+         -p 9200:9200 \
+         --ulimit memlock=-1:-1 \
+         --ulimit nofile=65536:65536 \
+         -e "node.name=os-node-1" \
+         -e "bootstrap.memory_lock=false" \
+         -e "ES_JAVA_OPTS=-Xms128m -Xmx128m -Dopensearch_security.disabled=true" \
+         -e "cluster.initial_master_nodes=os-node-1" \
+         -e "discovery.seed_hosts=$OPENSEARCH_IP" \
+         opensearchproject/opensearch:2.12.0
+
+         echo "OpenSearch started with seed_hosts=$OPENSEARCH_IP"
 
          echo " Waiting 40s for JVM initialization..."
          sleep 40
