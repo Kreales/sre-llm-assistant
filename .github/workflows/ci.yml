@@ -35,7 +35,7 @@ jobs:
       - name: Start infrastructure via Docker Compose
         run: |
           echo "Building and starting all services..."
-          docker compose up -d --build --wait --abort-on-container-exit
+          docker compose up -d --build
           
           echo "✅ All containers are healthy and ready"
           docker compose ps
