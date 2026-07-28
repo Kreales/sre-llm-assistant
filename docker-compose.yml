@@ -59,7 +59,7 @@ services:
     environment:
       - OLLAMA_HOST=0.0.0.0:11434
       - OLLAMA_ORIGINS=*
-      - OLLAMA_NUM_THREADS=2  # ← важно: ограничиваем потоки под 2 vCPU
+      - OLLAMA_NUM_THREADS=2  # ← важно: ограничиваем потоки под 2 vCPU 
     volumes:
       - ollama-data:/root/.ollama
     networks: [sre-net]

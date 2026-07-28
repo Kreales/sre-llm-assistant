@@ -8,6 +8,12 @@ if ! curl -s --connect-timeout 5 http://localhost:9200/_cluster/health > /dev/nu
   exit 1
 fi
 
+CURRENT_DATE=$(date +%Y.%m.%d)
+INDEX_NAME="sre-logs-${CURRENT_DATE}"
+
+echo "Deleting existing index: ${INDEX_NAME}"
+curl -X DELETE "http://localhost:9200/${INDEX_NAME}" 2>/dev/null || true
+
 echo "🔧 Creating Index Template with proper keyword fields..."
 
 curl -X PUT "http://localhost:9200/_index_template/sre-logs-template" \

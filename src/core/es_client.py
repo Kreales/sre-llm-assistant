@@ -14,8 +14,7 @@ class OpenSearchClient:
             max_retries=3
         )
 
-    def get_error_logs(self, minutes: int = 60, limit: int = 50) -> list:
-        """Получает логи уровня ERROR/CRITICAL за последние минуты"""
+    def get_error_logs(self, minutes: int = 60, limit: int = 30) -> list:    
         query = {
             "query": {
                 "bool": {
@@ -28,21 +27,70 @@ class OpenSearchClient:
                             }
                         },
                         {
-                            "simple_query_string": {
-                                "query": 'level:(ERROR OR CRITICAL)',
-                                "fields": ["level"]
+                            "terms": {
+                                "level.keyword": ["ERROR", "CRITICAL"]
                             }
                         }
                     ]
                 }
             },
             "sort": [{"@timestamp": {"order": "desc"}}],
-            "size": limit
+            "size": limit  # ← ВАЖНО: не 1, а 30 (или limit)
         }
 
         try:
             resp = self.client.search(index="sre-logs-*", body=query)
-            return [hit["_source"] for hit in resp["hits"]["hits"]]
+            logs = [hit["_source"] for hit in resp["hits"]["hits"]]
+        
+            print(f"🔍 Found {len(logs)} error logs for analysis")  # ← отладка
+            return logs
         except Exception as e:
             logger.error(f"OpenSearch query failed: {e}")
-            return []   
+            return []
+
+    def get_error_groups(self, minutes: int = 60, top_k: int = 3) -> list:
+    """Возвращает топ-K групп ошибок с примерами логов"""
+        query = {
+            "size": 0,
+            "query": {
+                "bool": {
+                    "must": [
+                        {"range": {"@timestamp": {"gte": f"now-{minutes}m/m"}}},
+                        {"terms": {"level.keyword": ["ERROR", "CRITICAL"]}}
+                    ]
+                }
+            },
+            "aggs": {
+                "by_message": {
+                    "terms": {
+                        "field": "message.keyword",
+                        "size": top_k,
+                        "order": {"_count": "desc"}
+                    },
+                    "aggs": {
+                        "sample_logs": {
+                            "top_hits": {
+                                "size": 2,
+                                "_source": ["@timestamp", "service", "pod", "message"]
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        try:
+            resp = self.client.search(index="sre-logs-*", body=query)
+            buckets = resp["aggregations"]["by_message"]["buckets"]
+
+            groups = []
+            for bucket in buckets:
+                groups.append({
+                    "message": bucket["key"],
+                    "count": bucket["doc_count"],
+                    "samples": [hit["_source"] for hit in bucket["sample_logs"]["hits"]["hits"]]
+                })
+            return groups
+        except Exception as e:
+            logger.error(f"Error fetching error groups: {e}")
+            return []

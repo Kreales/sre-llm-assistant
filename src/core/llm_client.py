@@ -17,20 +17,21 @@ class LLMClient:
         Возвращает словарь или {"error": "..."}
         """
         # Упрощённый промпт для быстрой генерации
-        system_prompt = "Ты — SRE-инженер. Отвечай ТОЛЬКО валидным JSON без пояснений."
+        system_prompt = (
+            "Ты — опытный SRE-инженер. Твоя задача — проанализировать реальные логи и дать точные, actionable рекомендации. "
+            "Не выдумывай, не повторяй шаблоны. Не используй фразы вроде 'краткое описание причины' или 'Вариант команды для исправления'. "
+            "Если логи не содержат достаточно информации — верни {'error': 'Insufficient log context'}."
+        )
 
-        user_prompt = f"""
-        Проанализируй логи и верни JSON:
-        {{
-          "root_cause": "краткое описание причины",
-          "commands": ["команда 1", "команда 2"],
-          "risk": "low|medium|high",
-          "explanation": "объяснение на русском"
-        }}
-
-        Логи:
-        {logs_text[:1000]}  # ограничиваем длину для быстроты
-        """
+        user_prompt = (
+            f"Вот 30 последних ошибок из production:\n{logs_text}\n\n"
+            "Ответь на русском языке в формате JSON с полями:\n"
+            "- root_cause: конкретная причина (не общая)\n"
+            "- commands: список из 2–3 реальных CLI-команд (например: kubectl describe pod ..., journalctl -u postgres)\n"
+            "- risk: low/medium/high\n"
+            "- explanation: 1–2 предложения, почему это произошло и как предотвратить\n"
+            "ВАЖНО: НЕ ВКЛЮЧАЙ в ответ никакие другие поля и пояснения. Только чистый JSON."
+        )
 
         payload = {
             "model": self.model,
@@ -41,8 +42,7 @@ class LLMClient:
             "stream": False,
             "options": {
                 "temperature": 0.1,
-                "num_predict": 256,  # ограничиваем длину генерации
-                "top_k": 20,
+                "top_k": 40,
                 "top_p": 0.9
             }
         }
@@ -124,9 +124,3 @@ class LLMClient:
             logger.error(f"Unexpected error during LLM request: {e}")
             return {"error": f"Unexpected error: {str(e)}"}
 
-# Тестирование (опционально)
-if __name__ == "__main__":
-    client = LLMClient()
-    sample_logs = "[2024-05-15T10:00:00Z] ERROR auth-service: ConnectionRefusedError: postgres:5432 refused"
-    result = client.generate_remediation(sample_logs)
-    print(json.dumps(result, indent=2, ensure_ascii=False))

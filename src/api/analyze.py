@@ -22,20 +22,33 @@ class AnalyzeRequest(BaseModel):
 @router.post("/analyze")
 async def analyze_incident(req: AnalyzeRequest):
     minutes = int(req.hours * 60)
-    logs = es.get_error_logs(minutes=minutes, limit=30)
+    groups = es.get_error_groups(minutes=minutes, top_k=3)
 
-    if not logs:
-        return {
-            "status": "no_logs",
-            "message": f"No error logs found in the last {req.hours} hours",
-            "request": req.dict()
-        }
+    if not groups:
+        return {"status": "no_logs", ...}
 
-    # Формируем текст для LLM
-    log_text = "\n".join([
-        f"[{log.get('@timestamp', '')}] {log.get('level', 'INFO')} [{log.get('service', 'unknown')}]: {log.get('message', '')}"
-        for log in logs
-    ])
+    analysis_results = []
+    for group in groups:
+        # Собери текст для LLM: группа + примеры
+        group_text = f"Ошибка ({group['count']} раз):\n{group['message']}\nПримеры:\n"
+        for log in group["samples"]:
+            group_text += f"- [{log['@timestamp']}] {log['service']}: {log['message']}\n"
+
+        result = llm.generate_remediation(group_text)
+        analysis_results.append({
+            "error_pattern": group["message"],
+            "count": group["count"],
+            "remediation": result
+        })
+
+    return {
+        "request": req.dict(),
+        "error_groups_analyzed": len(groups),
+        "groups": analysis_results,
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+    print(f"🔍 Sending {len(logs)} logs to LLM:\n{log_text[:500]}...")
 
     result = llm.generate_remediation(log_text)
 

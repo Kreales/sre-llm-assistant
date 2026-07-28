@@ -1,4 +1,4 @@
-FROM phi-3:mini
+FROM gemma:2b
 PARAMETER temperature 0.2
 PARAMETER num_ctx 4096          # уменьшил контекст (экономит RAM)
 PARAMETER num_batch 32          # размер батча для CPU
