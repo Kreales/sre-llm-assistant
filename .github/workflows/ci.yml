@@ -48,9 +48,6 @@ jobs:
       - name: Pull ollama model
         run: docker exec ollama ollama pull gemma:2b
 
-      - name: Setup indices
-        run: bash scripts/setup_indices.sh
-
       - name: Setup opensearch
         run: bash scripts/setup_opensearch.sh
 
