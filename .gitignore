@@ -1,5 +1,5 @@
 # Python
-__pycache__/ *.pyc *.egg-info/ dist/ .venv/ poetry.lock
+__pycache__/ *.pyc *.egg-info/ dist/ .venv/ poetry.lock 
 
 # Docker/Compose
 .docker/ *.pid
@@ -8,7 +8,7 @@ __pycache__/ *.pyc *.egg-info/ dist/ .venv/ poetry.lock
 *.db *.wal data/ ollama_models/
 
 # Secrets/Local configs
-.env.local *.key *.pem .vscode/ .idea/
+.env .local *.key *.pem .vscode/ .idea/ 
 
 # OS
 .DS_Store Thumbs.db
