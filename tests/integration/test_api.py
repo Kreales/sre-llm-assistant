@@ -1,4 +1,3 @@
-import pytest
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 from src.main import app
@@ -14,33 +13,56 @@ def test_analyze_endpoint_returns_json(mock_get_logs, mock_llm):
             "@timestamp": "2026-07-31T10:00:00Z",
             "level": "ERROR",
             "service": "auth-service",
+            "pod": "auth-1",
             "message": "Connection refused",
         },
         {
             "@timestamp": "2026-07-31T10:01:00Z",
             "level": "CRITICAL",
             "service": "payment-gateway",
+            "pod": "pay-1",
             "message": "OOMKilled",
+        },
+        {
+            "@timestamp": "2026-07-31T10:02:00Z",
+            "level": "ERROR",
+            "service": "auth-service",
+            "pod": "auth-2",
+            "message": "Connection refused",
         },
     ]
     mock_llm.return_value = {
-        "root_cause": "test",
-        "commands": ["kubectl get pods"],
-        "risk": "medium",
-        "explanation": "test explanation",
+        "issues": [
+            {
+                "error": "Connection refused",
+                "root_cause": "db down",
+                "risk": "high",
+                "commands": ["kubectl get pods"],
+            },
+            {
+                "error": "OOMKilled",
+                "root_cause": "memory",
+                "risk": "medium",
+                "commands": ["kubectl top pod"],
+            },
+        ],
+        "summary": "two issues",
+        "priority_order": ["Connection refused", "OOMKilled"],
     }
 
     response = client.post("/api/v1/analyze", json={"hours": 0.1})
     assert response.status_code == 200
     data = response.json()
-    assert "request" in data
-    assert data["logs_analyzed"] == 2
-    assert "remediation" in data
+    assert data["logs_analyzed"] == 3
+    assert data["unique_errors"] == 2
+    assert len(data["error_summary"]) == 2
 
-    # В LLM уходят оба лога, а не только первый
     sent_text = mock_llm.call_args[0][0]
     assert "Connection refused" in sent_text
     assert "OOMKilled" in sent_text
+    assert "[2x]" in sent_text
+    assert "[1x]" in sent_text
+    assert "Разбери КАЖДУЮ ошибку" in sent_text
 
 
 @patch("src.api.analyze.es.get_error_logs")

@@ -19,21 +19,21 @@ class LLMClient:
         Возвращает словарь или {"error": "..."}.
         """
         system_prompt = (
-            "Ты — опытный SRE-инженер. Твоя задача — проанализировать реальные логи "
-            "и дать точные, actionable рекомендации. Не выдумывай, не повторяй шаблоны. "
-            "Если логи не содержат достаточно информации — верни "
-            "{\"error\": \"Insufficient log context\"}."
+            "Ты — опытный SRE-инженер. Тебе передают НЕСКОЛЬКО разных ошибок из production. "
+            "Ты ОБЯЗАН учесть ВСЕ уникальные ошибки из списка, а не только первую. "
+            "Не выдумывай факты, которых нет в логах. "
+            "Ответ — только валидный JSON без markdown."
         )
 
         user_prompt = (
-            f"Вот последние ошибки из production:\n{logs_text}\n\n"
-            "Ответь на русском языке в формате JSON с полями:\n"
-            "- root_cause: конкретная причина (не общая)\n"
-            "- commands: список из 2–3 реальных CLI-команд "
-            "(например: kubectl describe pod ..., journalctl -u postgres)\n"
-            "- risk: low/medium/high\n"
-            "- explanation: 1–2 предложения, почему это произошло и как предотвратить\n"
-            "ВАЖНО: НЕ ВКЛЮЧАЙ в ответ никакие другие поля и пояснения. Только чистый JSON."
+            f"{logs_text}\n\n"
+            "Ответь на русском языке СТРОГО JSON-объектом с полями:\n"
+            "- issues: массив объектов по КАЖДОЙ уникальной ошибке из списка выше; "
+            "у каждого объекта поля: error (текст ошибки), root_cause, risk "
+            "(low/medium/high), commands (2-3 CLI-команды)\n"
+            "- summary: 1-2 предложения — общая картина инцидента\n"
+            "- priority_order: массив текстов ошибок в порядке приоритета устранения\n"
+            "Не пропускай ошибки из списка. Не добавляй пояснений вне JSON."
         )
 
         payload = {
@@ -47,8 +47,15 @@ class LLMClient:
                 "temperature": 0.1,
                 "top_k": 40,
                 "top_p": 0.9,
+                "num_ctx": 8192,
             },
         }
+
+        logger.info(
+            "LLM request: model=%s prompt_chars=%s",
+            self.model,
+            len(user_prompt),
+        )
 
         try:
             with httpx.Client(timeout=300.0) as client:
@@ -77,46 +84,7 @@ class LLMClient:
                 if not raw_response:
                     return {"error": "LLM returned empty response", "raw": result}
 
-                start_pos = raw_response.find("{")
-                if start_pos == -1:
-                    return {
-                        "error": "No JSON object found in LLM response",
-                        "raw_response_snippet": raw_response[:200],
-                    }
-
-                bracket_count = 0
-                end_pos = -1
-                for i, char in enumerate(raw_response[start_pos:], start=start_pos):
-                    if char == "{":
-                        bracket_count += 1
-                    elif char == "}":
-                        bracket_count -= 1
-                        if bracket_count == 0:
-                            end_pos = i
-                            break
-
-                if end_pos != -1:
-                    json_str = raw_response[start_pos : end_pos + 1]
-                else:
-                    json_match = re.search(r"\{.*\}", raw_response, re.DOTALL)
-                    if json_match:
-                        json_str = json_match.group()
-                    else:
-                        return {
-                            "error": "LLM did not return valid JSON format",
-                            "raw_response_snippet": raw_response[:200] + "...",
-                        }
-
-                try:
-                    return json.loads(json_str)
-                except json.JSONDecodeError:
-                    try:
-                        return json.loads(json_str.replace("'", '"'))
-                    except json.JSONDecodeError:
-                        return {
-                            "error": "Could not parse JSON from LLM response",
-                            "raw_response_snippet": raw_response[:200] + "...",
-                        }
+                return self._parse_json_response(raw_response)
 
         except httpx.TimeoutException:
             logger.error(f"LLM request timed out to {self.host}")
@@ -127,3 +95,44 @@ class LLMClient:
         except Exception as e:
             logger.error(f"Unexpected error during LLM request: {e}")
             return {"error": f"Unexpected error: {str(e)}"}
+
+    def _parse_json_response(self, raw_response: str) -> Dict[str, Any]:
+        start_pos = raw_response.find("{")
+        if start_pos == -1:
+            return {
+                "error": "No JSON object found in LLM response",
+                "raw_response_snippet": raw_response[:200],
+            }
+
+        bracket_count = 0
+        end_pos = -1
+        for i, char in enumerate(raw_response[start_pos:], start=start_pos):
+            if char == "{":
+                bracket_count += 1
+            elif char == "}":
+                bracket_count -= 1
+                if bracket_count == 0:
+                    end_pos = i
+                    break
+
+        if end_pos != -1:
+            json_str = raw_response[start_pos : end_pos + 1]
+        else:
+            json_match = re.search(r"\{.*\}", raw_response, re.DOTALL)
+            if not json_match:
+                return {
+                    "error": "LLM did not return valid JSON format",
+                    "raw_response_snippet": raw_response[:200] + "...",
+                }
+            json_str = json_match.group()
+
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError:
+            try:
+                return json.loads(json_str.replace("'", '"'))
+            except json.JSONDecodeError:
+                return {
+                    "error": "Could not parse JSON from LLM response",
+                    "raw_response_snippet": raw_response[:200] + "...",
+                }
