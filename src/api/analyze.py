@@ -43,7 +43,7 @@ def _build_logs_prompt(logs: list) -> tuple[str, list[dict]]:
     for idx, (message, count) in enumerate(counts.most_common(), start=1):
         samples = by_message[message][:3]
         sample_lines = [
-            f"    • [{s.get('@timestamp', '')}] "
+            f"    - [{s.get('@timestamp', '')}] "
             f"{s.get('level', '?')} / {s.get('service', '?')} / {s.get('pod', '?')}"
             for s in samples
         ]
@@ -79,7 +79,7 @@ async def analyze_incident(req: AnalyzeRequest):
     log_text, error_summary = _build_logs_prompt(logs)
 
     print(
-        f"🔍 Sending {len(logs)} logs "
+        f"Sending {len(logs)} logs "
         f"({len(error_summary)} unique errors, {len(log_text)} chars) to LLM"
     )
     print(log_text[:800] + ("..." if len(log_text) > 800 else ""))

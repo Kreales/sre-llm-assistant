@@ -44,7 +44,7 @@ class OpenSearchClient:
         try:
             resp = self.client.search(index="sre-logs-*", body=query)
             logs = [hit["_source"] for hit in resp["hits"]["hits"]]
-            print(f"🔍 Found {len(logs)} error logs for analysis")
+            print(f"Found {len(logs)} error logs for analysis")
             return logs
         except Exception as e:
             logger.error(f"OpenSearch query failed: {e}")

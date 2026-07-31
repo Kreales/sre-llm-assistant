@@ -1,40 +1,38 @@
 # SRE LLM Assistant
 
-AI-powered log analysis and remediation for Site Reliability Engineering.
+Дипломный проект по DevOps. Идея простая: собрать логи, положить в OpenSearch,
+прогнать через локальную LLM (Ollama) и получить рекомендации, что чинить.
 
-Дипломный DevOps-проект: сбор логов → OpenSearch → анализ через локальную LLM (Ollama) → рекомендации SRE.
+## Что внутри
 
-## Стек
+- FastAPI (`sre-api`) — эндпоинт анализа
+- Fluent Bit + OpenSearch + Dashboards — логи
+- Ollama (`gemma:2b`) — локальная модель
+- Prometheus + Grafana — метрики
+- GitHub Actions — unit-тесты и smoke на docker compose
 
-- **API:** FastAPI (`sre-api`)
-- **Логи:** Fluent Bit → OpenSearch + Dashboards
-- **LLM:** Ollama (`gemma:2b`)
-- **Мониторинг:** Prometheus + Grafana
-- **CI:** GitHub Actions (`docker compose` smoke + unit-тесты)
-
-## Быстрый старт
+## Как поднять
 
 ```bash
-# 1. Поднять инфраструктуру
 make up
 
-# 2. Дождаться health API
+# дождаться API
 curl -sf http://localhost:8001/health
 
-# 3. Создать index template и засеять тестовые ERROR-логи
+# шаблон индекса и тестовые ERROR-логи
 bash scripts/setup_opensearch.sh
 python scripts/seed_logs.py
 
-# 4. (опционально) Скачать модель
+# модель, если ещё не скачана
 docker exec ollama ollama pull gemma:2b
 
-# 5. Анализ инцидента
+# анализ
 curl -X POST http://localhost:8001/api/v1/analyze \
   -H "Content-Type: application/json" \
   -d '{"hours": 1, "limit": 30}'
 ```
 
-## Сервисы
+## Порты
 
 | Сервис | URL |
 |--------|-----|
@@ -43,44 +41,42 @@ curl -X POST http://localhost:8001/api/v1/analyze \
 | Dashboards | http://localhost:5601 |
 | Ollama | http://localhost:11434 |
 | Prometheus | http://localhost:9090/targets |
-| Grafana | http://localhost:3000 (admin/admin) |
+| Grafana | http://localhost:3000 (admin / admin) |
 
-### Мониторинг (UI)
+### Grafana и Prometheus
 
-1. **Prometheus:** открой http://localhost:9090/targets — job `sre-api` должен быть **UP**.
-2. **Grafana:** http://localhost:3000  
-   - логин: `admin` / `admin` (анонимный Viewer тоже включён)  
-   - datasource **Prometheus** уже provisioning  
-   - дашборд: **SRE → SRE LLM Assistant** (RPS, ошибки, latency, CPU/RAM)
-3. Чтобы появились графики, сделай пару запросов к API (`/health`, `/api/v1/analyze`).
+1. Prometheus: http://localhost:9090/targets — job `sre-api` должен быть UP.
+2. Grafana: http://localhost:3000, логин `admin`/`admin` (можно и без логина, Viewer).
+   Datasource Prometheus уже заведён через provisioning.
+   Дашборд лежит в папке SRE: **SRE LLM Assistant**.
+3. Чтобы на графиках что-то появилось, дерни `/health` или `/analyze`.
 
 ## API
 
-- `GET /health` — health-check
-- `POST /api/v1/analyze` — выборка ERROR/CRITICAL логов из OpenSearch и анализ через LLM
-
-Тело запроса:
+- `GET /health`
+- `POST /api/v1/analyze` — ERROR/CRITICAL из OpenSearch -> LLM
 
 ```json
 { "hours": 1, "limit": 30, "severity": "ERROR" }
 ```
 
-## Make-команды
+## Make
 
 ```bash
-make up       # поднять docker compose
-make down     # остановить и удалить тома
-make build    # собрать образ sre-api
-make test     # unit + integration тесты
-make help     # справка
+make up       # поднять compose
+make down     # остановить, снести тома
+make build    # собрать образ
+make test     # тесты
+make seed     # template + логи
+make help
 ```
 
-## Структура
+## Структура репо
 
 ```
-src/                  # FastAPI приложение
-scripts/              # startup, setup OpenSearch, seed логов
-infra/                # OpenSearch, Fluent Bit, Ollama, monitoring
-tests/                # unit + integration
-.github/workflows/    # CI
+src/                  # приложение
+scripts/              # startup, setup OS, seed
+infra/                # opensearch, fluentbit, ollama, monitoring
+tests/
+.github/workflows/
 ```

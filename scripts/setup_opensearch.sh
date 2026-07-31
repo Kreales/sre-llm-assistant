@@ -3,14 +3,14 @@ set -e
 
 ES_URL="${ES_HOST:-http://localhost:9200}"
 
-echo "⏳ Waiting for OpenSearch at ${ES_URL}..."
+echo "Waiting for OpenSearch at ${ES_URL}..."
 for i in $(seq 1 60); do
   if curl -sf --connect-timeout 5 "${ES_URL}/_cluster/health" > /dev/null; then
-    echo "✅ OpenSearch ready."
+    echo "OpenSearch is ready."
     break
   fi
   if [ "$i" -eq 60 ]; then
-    echo "❌ OpenSearch not ready"
+    echo "OpenSearch is not ready"
     exit 1
   fi
   sleep 2
@@ -22,7 +22,7 @@ INDEX_NAME="sre-logs-${CURRENT_DATE}"
 echo "Deleting existing index: ${INDEX_NAME}"
 curl -sf -X DELETE "${ES_URL}/${INDEX_NAME}" > /dev/null 2>&1 || true
 
-echo "🔧 Creating Index Template with proper keyword fields..."
+echo "Creating index template..."
 
 curl -sf -X PUT "${ES_URL}/_index_template/sre-logs-template" \
   -H 'Content-Type: application/json' \
@@ -73,5 +73,5 @@ curl -sf -X PUT "${ES_URL}/_index_template/sre-logs-template" \
   }'
 
 echo ""
-echo "✅ Index Template created."
+echo "Index template created."
 curl -s "${ES_URL}/_cat/indices?v" | head -n 5

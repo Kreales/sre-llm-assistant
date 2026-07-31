@@ -51,19 +51,19 @@ def send_bulk_logs(logs, batch_size=500):
         response = requests.post(f"{ES_URL}/_bulk", data=bulk_body, headers=headers, timeout=30)
 
         if response.status_code != 200:
-            print(f"❌ Bulk request failed: {response.status_code}, {response.text}")
+            print(f"Bulk request failed: {response.status_code}, {response.text}")
             continue
 
         res_data = response.json()
         if res_data.get("errors"):
-            print("⚠️ Some items in bulk request had errors:")
+            print("Some items in bulk request had errors:")
             for item in res_data["items"]:
                 if item.get("index", {}).get("error"):
                     print(f"  Error: {item['index']['error']}")
         else:
             sent = len(batch)
             total_sent += sent
-            print(f"✅ Sent batch of {sent} logs ({total_sent}/{total_logs})")
+            print(f"Sent batch of {sent} logs ({total_sent}/{total_logs})")
 
     # Дождаться refresh, чтобы документы сразу были searchable
     requests.post(f"{ES_URL}/{INDEX}/_refresh", timeout=10)
@@ -71,11 +71,11 @@ def send_bulk_logs(logs, batch_size=500):
 
 
 def main():
-    print(f"🚀 Seeding logs into {ES_URL}/{INDEX}...")
+    print(f"Seeding logs into {ES_URL}/{INDEX}...")
     logs = [generate_recent_log() for _ in range(100)]
-    print(f"📦 Generated {len(logs)} fresh logs. Sending via Bulk API...")
+    print(f"Generated {len(logs)} logs, sending via Bulk API...")
     send_bulk_logs(logs)
-    print("🏁 Bulk log generation done.")
+    print("Done.")
 
 
 if __name__ == "__main__":

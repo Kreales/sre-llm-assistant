@@ -64,13 +64,13 @@ jobs:
           for i in $(seq 1 60); do
             if curl -sf http://localhost:9200/_cluster/health >/dev/null \
                && curl -sf http://localhost:8001/health >/dev/null; then
-              echo "✅ OpenSearch and API are ready"
+              echo "OpenSearch and API are ready"
               docker compose ps
               exit 0
             fi
             sleep 5
           done
-          echo "❌ Services did not become ready in time"
+          echo "Services did not become ready in time"
           docker compose ps
           docker compose logs --tail=100
           exit 1

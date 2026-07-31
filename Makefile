@@ -6,42 +6,42 @@ ES_PORT := 9200
 DASH_PORT := 5601
 
 up:
-	@echo "🚀 Starting SRE LLM Assistant..."
+	@echo "Starting SRE LLM Assistant..."
 	$(COMPOSE) up -d --build
-	@echo "✅ Services starting:"
-	@echo "   → API:        http://localhost:$(API_PORT)"
-	@echo "   → OpenSearch: http://localhost:$(ES_PORT)"
-	@echo "   → Dashboards: http://localhost:$(DASH_PORT)"
+	@echo "Services:"
+	@echo "  API:        http://localhost:$(API_PORT)"
+	@echo "  OpenSearch: http://localhost:$(ES_PORT)"
+	@echo "  Dashboards: http://localhost:$(DASH_PORT)"
 
 down:
-	@echo "🛑 Stopping services..."
+	@echo "Stopping services..."
 	$(COMPOSE) down -v
-	@echo "✅ Cleaned."
+	@echo "Done."
 
 build:
-	@echo "🛠️ Building sre-api image..."
+	@echo "Building sre-api image..."
 	docker build -t sre-api:latest -f Dockerfile.dev .
-	@echo "✅ Built sre-api:latest"
+	@echo "Built sre-api:latest"
 
 test:
-	@echo "🧪 Running tests..."
+	@echo "Running tests..."
 	python3 -m pytest tests/unit/ -v
 	python3 -m pytest tests/integration/ -v
-	@echo "✅ Tests passed."
+	@echo "Tests passed."
 
 seed:
 	bash scripts/setup_opensearch.sh
 	python3 scripts/seed_logs.py
 
 docs:
-	@echo "📝 Fetching OpenAPI schema..."
+	@echo "Fetching OpenAPI schema..."
 	mkdir -p docs
 	curl -sf http://localhost:$(API_PORT)/openapi.json > docs/api.json \
-		&& echo "✅ docs/api.json updated" \
-		|| echo "⚠️ API not ready — skip openapi"
+		&& echo "docs/api.json updated" \
+		|| echo "API not ready, skip openapi"
 
 clean:
-	@echo "🧹 Cleaning..."
+	@echo "Cleaning..."
 	$(COMPOSE) down -v --remove-orphans || true
 	docker system prune -f
 
@@ -49,11 +49,11 @@ help:
 	@echo "Makefile for SRE LLM Assistant"
 	@echo ""
 	@echo "Commands:"
-	@echo "  make up     — запустить инфраструктуру"
-	@echo "  make down   — остановить и удалить тома"
-	@echo "  make build  — собрать Docker-образ"
-	@echo "  make test   — unit & integration тесты"
-	@echo "  make seed   — template + тестовые логи в OpenSearch"
-	@echo "  make docs   — сохранить openapi.json"
-	@echo "  make clean  — очистить docker-артефакты"
-	@echo "  make help   — справка"
+	@echo "  make up     - start stack"
+	@echo "  make down   - stop and remove volumes"
+	@echo "  make build  - build Docker image"
+	@echo "  make test   - unit + integration tests"
+	@echo "  make seed   - OpenSearch template + sample logs"
+	@echo "  make docs   - save openapi.json"
+	@echo "  make clean  - prune docker leftovers"
+	@echo "  make help   - this help"
