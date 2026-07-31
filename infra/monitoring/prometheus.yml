@@ -1,0 +1,8 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: sre-api
+    static_configs:
+      - targets: ["sre-api:8000"]
+    metrics_path: /metrics

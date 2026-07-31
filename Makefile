@@ -1,20 +1,59 @@
-.PHONY: up down logs clean seed
+.PHONY: up down test build docs clean help
+
+COMPOSE := docker compose
+API_PORT := 8001
+ES_PORT := 9200
+DASH_PORT := 5601
 
 up:
-	@echo "🚀 Поднимаем инфраструктуру..."
-	docker compose up -d --wait
-	@echo "✅ Stack ready. API: http://localhost:8000"
+	@echo "🚀 Starting SRE LLM Assistant..."
+	$(COMPOSE) up -d --build
+	@echo "✅ Services starting:"
+	@echo "   → API:        http://localhost:$(API_PORT)"
+	@echo "   → OpenSearch: http://localhost:$(ES_PORT)"
+	@echo "   → Dashboards: http://localhost:$(DASH_PORT)"
 
 down:
-	docker compose down -v
+	@echo "🛑 Stopping services..."
+	$(COMPOSE) down -v
+	@echo "✅ Cleaned."
 
-logs:
-	docker compose logs -f $(service)
+build:
+	@echo "🛠️ Building sre-api image..."
+	docker build -t sre-api:latest -f Dockerfile.dev .
+	@echo "✅ Built sre-api:latest"
+
+test:
+	@echo "🧪 Running tests..."
+	python3 -m pytest tests/unit/ -v
+	python3 -m pytest tests/integration/ -v
+	@echo "✅ Tests passed."
 
 seed:
-	@echo "📦 Генерируем синтетические логи..."
-	python scripts/seed_logs.py --count 500 --services auth,payment,gateway --duration 2h
+	bash scripts/setup_opensearch.sh
+	python3 scripts/seed_logs.py
+
+docs:
+	@echo "📝 Fetching OpenAPI schema..."
+	mkdir -p docs
+	curl -sf http://localhost:$(API_PORT)/openapi.json > docs/api.json \
+		&& echo "✅ docs/api.json updated" \
+		|| echo "⚠️ API not ready — skip openapi"
 
 clean:
-	docker compose down -v --rmi local
-	docker system prune -af
+	@echo "🧹 Cleaning..."
+	$(COMPOSE) down -v --remove-orphans || true
+	docker system prune -f
+
+help:
+	@echo "Makefile for SRE LLM Assistant"
+	@echo ""
+	@echo "Commands:"
+	@echo "  make up     — запустить инфраструктуру"
+	@echo "  make down   — остановить и удалить тома"
+	@echo "  make build  — собрать Docker-образ"
+	@echo "  make test   — unit & integration тесты"
+	@echo "  make seed   — template + тестовые логи в OpenSearch"
+	@echo "  make docs   — сохранить openapi.json"
+	@echo "  make clean  — очистить docker-артефакты"
+	@echo "  make help   — справка"

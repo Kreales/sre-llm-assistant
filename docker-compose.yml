@@ -3,44 +3,37 @@ services:
     image: opensearchproject/opensearch:2.15.0
     container_name: opensearch
     environment:
-      OPENSEARCH_INITIAL_ADMIN_PASSWORD: "${ES_PASS}"
-      plugins.security.disabled: "true"
-      ES_JAVA_OPTS: "-Xms256m -Xmx256m"
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: "${ES_PASS:-Admin_Pass123!}"
+      DISABLE_SECURITY_PLUGIN: "true"
+      discovery.type: single-node
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
       bootstrap.memory_lock: "false"
-      http.cors.enabled: "true"
-      http.cors.allow-origin: "*"
     ulimits:
       nofile: { soft: 65536, hard: 65536 }
-    ports: 
+    ports:
       - "9200:9200"
     volumes:
       - opensearch-data:/usr/share/opensearch/data
       - ./infra/opensearch/opensearch.yml:/usr/share/opensearch/config/opensearch.yml:ro
     networks: [sre-net]
-    deploy:
-      resources:
-        limits: { memory: 1.5G, cpus: "1" }
-        reservations: { memory: 512M, cpus: "0.5" }
     healthcheck:
-      test: ["CMD-SHELL", "curl -f -u ${ES_USER}:${ES_PASS} http://localhost:9200/_cluster/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 30
+      start_period: 40s
 
   opensearch-dashboards:
     image: opensearchproject/opensearch-dashboards:2.15.0
     container_name: dashboards
     environment:
-      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${ES_PASS}
-      - OPENSEARCH_HOSTS=http://opensearch:9200  
-      - OPENSEARCH_SECURITY_ENABLED=false         
-      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true   
+      - OPENSEARCH_HOSTS=["http://opensearch:9200"]
+      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
       - SERVER_SSL_ENABLED=false
     ports:
       - "5601:5601"
     networks: [sre-net]
     depends_on: { opensearch: { condition: service_healthy } }
-    deploy: { resources: { limits: { memory: 400M, cpus: "0.4" } } }
 
   fluent-bit:
     image: fluent/fluent-bit:3.0.4
@@ -50,7 +43,6 @@ services:
       - ./infra/fluentbit/parsers.conf:/fluent-bit/etc/parsers.conf:ro
     networks: [sre-net]
     depends_on: { opensearch: { condition: service_healthy } }
-    deploy: { resources: { limits: { memory: 128M, cpus: "0.2" } } }
 
   ollama:
     image: ollama/ollama:0.5.7
@@ -59,30 +51,57 @@ services:
     environment:
       - OLLAMA_HOST=0.0.0.0:11434
       - OLLAMA_ORIGINS=*
-      - OLLAMA_NUM_THREADS=2  # ← важно: ограничиваем потоки под 2 vCPU 
+      - OLLAMA_NUM_THREADS=2
     volumes:
       - ollama-data:/root/.ollama
     networks: [sre-net]
-    deploy:
-      resources:
-        limits: { memory: 4G, cpus: "1.0" }  # ↓ CPU limit для модели 3B
-        reservations: { memory: 2G }
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
 
   sre-api:
-    build: { context: ., dockerfile: Dockerfile.dev }
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
     container_name: sre-api
     ports: ["8001:8000"]
     environment:
       - ES_HOST=http://opensearch:9200
-      - ES_USER=${ES_USER}
-      - ES_PASS=${ES_PASS}
       - OLLAMA_HOST=http://ollama:11434
-      - LOG_LEVEL=info
-      - LLM_MODEL=phi3:mini  # ← указываем лёгкую модель
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma:2b}
     networks: [sre-net]
-    depends_on: { opensearch: { condition: service_healthy }, ollama: { condition: service_started } }
-    deploy: { resources: { limits: { memory: 512M, cpus: "0.5" } } }
-    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    depends_on:
+      opensearch:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    ports: ["9090:9090"]
+    volumes:
+      - ./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks: [sre-net]
+    depends_on: [sre-api]
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    ports: ["3000:3000"]
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./infra/monitoring/datasources.yml:/etc/grafana/provisioning/datasources/ds.yaml:ro
+    networks: [sre-net]
+    depends_on: [prometheus]
 
 networks:
   sre-net: { driver: bridge }
@@ -90,4 +109,3 @@ networks:
 volumes:
   opensearch-data:
   ollama-data:
-

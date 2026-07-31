@@ -7,64 +7,99 @@ on:
     branches: [main, master]
 
 jobs:
-  test-deployment:
+  unit-tests:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
-      # 1. КРИТИЧЕСКИ ВАЖНО: Настройка ядра Linux для OpenSearch
-      # Без этого шага OpenSearch упадет с bootstrap checks failed еще до старта
-      - name: Configure kernel parameters for OpenSearch
-        run: |
-          sudo sysctl -w vm.max_map_count=262144
-          echo "✅ vm.max_map_count set to $(sysctl vm.max_map_count)"
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
-          cache: 'pip'
+          python-version: "3.10"
+          cache: pip
 
       - name: Install dependencies
         run: |
-            pip install --upgrade pip
-            pip install -r requirements.txt
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
 
-      # 2. ЕДИНЫЙ ЗАПУСК ВСЕЙ ИНФРАСТРУКТУРЫ
-      # --wait дожидается прохождения всех healthcheck'ов из docker-compose.yml
-      # --abort-on-container-exit останавливает всё, если какой-то сервис упал
+      - name: Run unit tests
+        run: pytest tests/unit/ -v
+
+  integration-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure kernel parameters for OpenSearch
+        run: |
+          sudo sysctl -w vm.max_map_count=262144
+          echo "vm.max_map_count=$(sysctl -n vm.max_map_count)"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Prepare env
+        run: |
+          printf '%s\n' \
+            'ES_USER=admin' \
+            'ES_PASS=Admin_Pass123!' \
+            'OLLAMA_MODEL=gemma:2b' > .env
+
       - name: Start infrastructure via Docker Compose
         run: |
-          echo "Building and starting all services..."
-          docker compose up -d --build
-          
-          echo "✅ All containers are healthy and ready"
+          docker compose up -d --build opensearch ollama sre-api
+          echo "Waiting for containers..."
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:9200/_cluster/health >/dev/null \
+               && curl -sf http://localhost:8001/health >/dev/null; then
+              echo "✅ OpenSearch and API are ready"
+              docker compose ps
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "❌ Services did not become ready in time"
           docker compose ps
-
-      # 3. ПРОВЕРКИ И ТЕСТИРОВАНИЕ
-      # Инфраструктура уже гарантированно готова благодаря --wait выше
+          docker compose logs --tail=100
+          exit 1
 
       - name: Pull ollama model
         run: docker exec ollama ollama pull gemma:2b
 
-      - name: Setup opensearch
+      - name: Setup OpenSearch index template
+        env:
+          ES_HOST: http://localhost:9200
         run: bash scripts/setup_opensearch.sh
 
       - name: Seed logs into OpenSearch
+        env:
+          ES_HOST: http://localhost:9200
         run: python scripts/seed_logs.py
 
-      - name: Test API endpoint
+      - name: Test API health
         run: |
-          sleep 15
-          curl -X POST http://localhost:8001/api/v1/analyze \
-          -H "Content-Type: application/json" \
-          -d '{"hours": 1}' | jq
-          
-      # 4. ОЧИСТКА (всегда выполняется, даже при падении тестов)
+          curl -sf http://localhost:8001/health | tee /tmp/health.json
+          test "$(jq -r .status /tmp/health.json)" = "healthy"
+
+      - name: Test analyze endpoint
+        run: |
+          curl -sf --max-time 360 -X POST http://localhost:8001/api/v1/analyze \
+            -H "Content-Type: application/json" \
+            -d '{"hours": 1, "limit": 30}' | tee /tmp/analyze.json
+          jq -e '.logs_analyzed >= 1' /tmp/analyze.json
+
       - name: Cleanup infrastructure
         if: always()
-        run: |
-          echo "Stopping and removing all containers and volumes..."
-          docker compose down -v
-          echo "✅ Cleanup completed"
+        run: docker compose down -v

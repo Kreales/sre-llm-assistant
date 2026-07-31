@@ -1,27 +1,13 @@
 cluster.name: sre-diploma-cluster
-
-
 node.name: os-node-1
-node.roles: [master, data, ingest]
 
 network.host: 0.0.0.0
 http.port: 9200
 
-
-cluster.initial_master_nodes: ["os-node-1"]
-discovery.seed_hosts: ["127.0.0.1"]
-
-
 bootstrap.memory_lock: false
-
-
-# Отключаем плагин безопасности для локальной разработки
-plugins.security.disabled: true
-
 
 path.data: /usr/share/opensearch/data
 path.logs: /usr/share/opensearch/logs
 
 http.cors.enabled: true
 http.cors.allow-origin: "*"
-
