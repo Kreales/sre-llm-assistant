@@ -1,14 +1,44 @@
 # Python
-__pycache__/ *.pyc *.egg-info/ dist/ .venv/ poetry.lock 
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+.env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+poetry.lock
 
-# Docker/Compose
-.docker/ *.pid
+# Docker / Compose
+.docker/
+*.pid
 
-# Ollama/ES data
-*.db *.wal data/ ollama_models/
+# Local data
+*.db
+*.wal
+data/
+ollama_models/
 
-# Secrets/Local configs
-.env .local *.key *.pem .vscode/ .idea/ 
+# Secrets / local configs
+.env
+.env.*
+!.env.example
+*.local
+*.key
+*.pem
+*.swp
+*.swo
+*~
 
-# OS
-.DS_Store Thumbs.db
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

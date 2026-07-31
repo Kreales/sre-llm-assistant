@@ -42,8 +42,17 @@ curl -X POST http://localhost:8001/api/v1/analyze \
 | OpenSearch | http://localhost:9200 |
 | Dashboards | http://localhost:5601 |
 | Ollama | http://localhost:11434 |
-| Prometheus | http://localhost:9090 |
+| Prometheus | http://localhost:9090/targets |
 | Grafana | http://localhost:3000 (admin/admin) |
+
+### Мониторинг (UI)
+
+1. **Prometheus:** открой http://localhost:9090/targets — job `sre-api` должен быть **UP**.
+2. **Grafana:** http://localhost:3000  
+   - логин: `admin` / `admin` (анонимный Viewer тоже включён)  
+   - datasource **Prometheus** уже provisioning  
+   - дашборд: **SRE → SRE LLM Assistant** (RPS, ошибки, latency, CPU/RAM)
+3. Чтобы появились графики, сделай пару запросов к API (`/health`, `/api/v1/analyze`).
 
 ## API
 

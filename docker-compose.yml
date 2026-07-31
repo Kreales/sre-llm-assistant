@@ -87,19 +87,36 @@ services:
 
   prometheus:
     image: prom/prometheus:v2.54.1
+    container_name: prometheus
     ports: ["9090:9090"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
     volumes:
       - ./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
     networks: [sre-net]
-    depends_on: [sre-api]
+    depends_on:
+      sre-api:
+        condition: service_healthy
 
   grafana:
     image: grafana/grafana:11.2.0
+    container_name: grafana
     ports: ["3000:3000"]
     environment:
+      - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/json/sre-api.json
     volumes:
-      - ./infra/monitoring/datasources.yml:/etc/grafana/provisioning/datasources/ds.yaml:ro
+      - ./infra/monitoring/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./infra/monitoring/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./infra/monitoring/dashboards:/etc/grafana/provisioning/dashboards/json:ro
+      - grafana-data:/var/lib/grafana
     networks: [sre-net]
     depends_on: [prometheus]
 
@@ -109,3 +126,5 @@ networks:
 volumes:
   opensearch-data:
   ollama-data:
+  prometheus-data:
+  grafana-data:
