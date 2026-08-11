@@ -3,9 +3,55 @@ import json
 import re
 import os
 import logging
-from typing import Dict, Any
+from typing import Any, Dict, List
+
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+
+
+class IssueItem(BaseModel):
+    error: str = Field(description="Текст ошибки из логов")
+    root_cause: str = Field(description="Причина и предложение по исправлению на русском")
+    risk: str = Field(description="low, medium или high")
+    commands: List[str] = Field(description="2-3 CLI-команды для диагностики/исправления")
+
+
+class RemediationResponse(BaseModel):
+    issues: List[IssueItem] = Field(description="По одной записи на каждую уникальную ошибку")
+    summary: str = Field(description="1-2 предложения — общая картина инцидента")
+    priority_order: List[str] = Field(
+        description="Тексты ошибок в порядке приоритета устранения"
+    )
+
+
+REMEDIATION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "issues": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "error": {"type": "string"},
+                    "root_cause": {"type": "string"},
+                    "risk": {"type": "string"},
+                    "commands": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                },
+                "required": ["error", "root_cause", "risk", "commands"],
+            },
+        },
+        "summary": {"type": "string"},
+        "priority_order": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+    },
+    "required": ["issues", "summary", "priority_order"],
+}
 
 
 class LLMClient:
@@ -16,24 +62,22 @@ class LLMClient:
     def generate_remediation(self, logs_text: str) -> Dict[str, Any]:
         """
         Запрашивает у LLM анализ логов и рекомендации.
-        Возвращает словарь или {"error": "..."}.
+        Возвращает словарь с полями issues/summary/priority_order или {"error": "..."}.
         """
         system_prompt = (
-            "Ты — опытный SRE-инженер. Тебе передают НЕСКОЛЬКО разных ошибок из production. "
-            "Ты ОБЯЗАН учесть ВСЕ уникальные ошибки из списка, а не только первую. "
-            "Не выдумывай факты, которых нет в логах. "
-            "Ответ — только валидный JSON без markdown."
+            "Ты — опытный SRE-инженер. "
+            "Учти ВСЕ уникальные ошибки из списка. Не выдумывай факты. "
+            "Ответ — только валидный JSON по схеме."
         )
 
         user_prompt = (
             f"{logs_text}\n\n"
-            "Ответь на русском языке СТРОГО JSON-объектом с полями:\n"
-            "- issues: массив объектов по КАЖДОЙ уникальной ошибке из списка выше; "
-            "у каждого объекта поля: error (текст ошибки), root_cause, risk "
-            "(low/medium/high), commands (2-3 CLI-команды)\n"
-            "- summary: 1-2 предложения — общая картина инцидента\n"
-            "- priority_order: массив текстов ошибок в порядке приоритета устранения\n"
-            "Не пропускай ошибки из списка. Не добавляй пояснений вне JSON."
+            "Верни JSON с полями issues, summary, priority_order.\n"
+            "Каждый элемент issues ОБЯЗАН содержать: error, root_cause, risk, commands.\n"
+            "risk только: low, medium или high.\n"
+            "commands — массив из 2-3 реальных CLI-команд.\n"
+            "priority_order — те же тексты error, от критичного к менее важному.\n"
+            "Без markdown и текста вне JSON."
         )
 
         payload = {
@@ -43,11 +87,13 @@ class LLMClient:
                 {"role": "user", "content": user_prompt},
             ],
             "stream": False,
+            "format": REMEDIATION_SCHEMA,
             "options": {
-                "temperature": 0.1,
-                "top_k": 40,
-                "top_p": 0.9,
-                "num_ctx": 8192,
+                "temperature": 0,
+                "top_k": 20,
+                "top_p": 0.8,
+                "num_ctx": 4096,
+                "num_predict": 1024,
             },
         }
 
@@ -60,6 +106,11 @@ class LLMClient:
         try:
             with httpx.Client(timeout=300.0) as client:
                 response = client.post(f"{self.host}/api/chat", json=payload)
+
+                # Старые Ollama без schema в format — fallback на format=json
+                if response.status_code == 400 and "format" in response.text.lower():
+                    payload["format"] = "json"
+                    response = client.post(f"{self.host}/api/chat", json=payload)
 
                 if response.status_code == 404:
                     return {
@@ -84,7 +135,10 @@ class LLMClient:
                 if not raw_response:
                     return {"error": "LLM returned empty response", "raw": result}
 
-                return self._parse_json_response(raw_response)
+                parsed = self._parse_json_response(raw_response)
+                if "error" in parsed and "issues" not in parsed:
+                    return parsed
+                return self._normalize_remediation(parsed)
 
         except httpx.TimeoutException:
             logger.error(f"LLM request timed out to {self.host}")
@@ -95,6 +149,73 @@ class LLMClient:
         except Exception as e:
             logger.error(f"Unexpected error during LLM request: {e}")
             return {"error": f"Unexpected error: {str(e)}"}
+
+    def _normalize_remediation(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Гарантирует наличие всех обязательных полей в ответе LLM."""
+        issues_raw = data.get("issues")
+        if not isinstance(issues_raw, list):
+            # Иногда модель кладёт одну issue на верхний уровень
+            if any(k in data for k in ("error", "root_cause", "commands")):
+                issues_raw = [data]
+            else:
+                issues_raw = []
+
+        issues: List[Dict[str, Any]] = []
+        for item in issues_raw:
+            if not isinstance(item, dict):
+                continue
+            risk = str(item.get("risk") or "medium").lower().strip()
+            if risk not in {"low", "medium", "high"}:
+                risk = "medium"
+            commands = item.get("commands") or []
+            if isinstance(commands, str):
+                commands = [commands]
+            if not isinstance(commands, list):
+                commands = []
+            commands = [str(c) for c in commands if c][:3]
+
+            issues.append(
+                {
+                    "error": str(item.get("error") or item.get("message") or "unknown"),
+                    "root_cause": str(
+                        item.get("root_cause")
+                        or item.get("cause")
+                        or item.get("recommendation")
+                        or "Не удалось определить причину по логам"
+                    ),
+                    "risk": risk,
+                    "commands": commands
+                    or ["kubectl get pods -A", "kubectl describe pod <pod>"],
+                }
+            )
+
+        summary = data.get("summary")
+        if not isinstance(summary, str) or not summary.strip():
+            if issues:
+                summary = f"Обнаружено ошибок: {len(issues)}. Требуется проверка по приоритету."
+            else:
+                summary = "Не удалось сформировать итог по логам."
+
+        issue_errors = [i["error"] for i in issues]
+        priority = data.get("priority_order")
+        placeholder_hints = ("ошибка с высшим приоритетом", "...", "текст ошибки")
+        if not isinstance(priority, list) or not priority:
+            priority = issue_errors
+        else:
+            priority = [str(p) for p in priority if p]
+            # gemma иногда копирует пример из промпта — тогда берём реальные ошибки
+            if any(any(h in p.lower() for h in placeholder_hints) for p in priority):
+                priority = issue_errors
+            elif issue_errors and not any(
+                any(err in p or p in err for err in issue_errors) for p in priority
+            ):
+                priority = issue_errors
+
+        return {
+            "issues": issues,
+            "summary": summary.strip(),
+            "priority_order": priority,
+        }
 
     def _parse_json_response(self, raw_response: str) -> Dict[str, Any]:
         start_pos = raw_response.find("{")

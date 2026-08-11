@@ -97,8 +97,11 @@ jobs:
         run: |
           curl -sf --max-time 360 -X POST http://localhost:8001/api/v1/analyze \
             -H "Content-Type: application/json" \
-            -d '{"hours": 1, "limit": 30}' | tee /tmp/analyze.json
+            -d '{"hours": 1, "limit": 10}' | tee /tmp/analyze.json
           jq -e '.logs_analyzed >= 1' /tmp/analyze.json
+          jq -e '.remediation.issues | type == "array"' /tmp/analyze.json
+          jq -e '.remediation.summary | type == "string"' /tmp/analyze.json
+          jq -e '.remediation.priority_order | type == "array"' /tmp/analyze.json
 
       - name: Cleanup infrastructure
         if: always()

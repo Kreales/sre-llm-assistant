@@ -16,7 +16,7 @@ class OpenSearchClient:
             max_retries=3,
         )
 
-    def get_error_logs(self, minutes: int = 60, limit: int = 30) -> list:
+    def get_error_logs(self, minutes: int = 60, limit: int = 10) -> list:
         """Возвращает до `limit` ERROR/CRITICAL логов за последние `minutes` минут."""
         query = {
             "query": {

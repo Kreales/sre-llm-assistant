@@ -29,7 +29,7 @@ docker exec ollama ollama pull gemma:2b
 # анализ
 curl -X POST http://localhost:8001/api/v1/analyze \
   -H "Content-Type: application/json" \
-  -d '{"hours": 1, "limit": 30}'
+  -d '{"hours": 1, "limit": 10}'
 ```
 
 ## Порты
@@ -57,7 +57,7 @@ curl -X POST http://localhost:8001/api/v1/analyze \
 - `POST /api/v1/analyze` — ERROR/CRITICAL из OpenSearch -> LLM
 
 ```json
-{ "hours": 1, "limit": 30, "severity": "ERROR" }
+{ "hours": 1, "limit": 10, "severity": "ERROR" }
 ```
 
 ## Make

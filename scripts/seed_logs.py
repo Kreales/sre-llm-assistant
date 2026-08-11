@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 
 ES_URL = os.getenv("ES_HOST", "http://localhost:9200")
 INDEX = "sre-logs-" + datetime.utcnow().strftime("%Y.%m.%d")
+SEED_COUNT = int(os.getenv("SEED_LOG_COUNT", "15"))
 
 ERROR_SCENARIOS = [
     {"level": "ERROR", "message": "ConnectionRefusedError: Connection to postgres:5432 refused"},
@@ -14,9 +15,6 @@ ERROR_SCENARIOS = [
     {"level": "CRITICAL", "message": "Disk space low on /var/lib/docker: 98% used"},
     {"level": "ERROR", "message": "Timeout: Upstream service 'payment-gateway' did not respond within 30s"},
     {"level": "CRITICAL", "message": "Pod restarting repeatedly: CrashLoopBackOff"},
-    {"level": "ERROR", "message": "Failed to connect to Redis: Connection timeout"},
-    {"level": "ERROR", "message": "Authentication failed: Invalid JWT token signature"},
-    {"level": "CRITICAL", "message": "Database disk full: WAL files consuming 95% space"},
 ]
 
 SERVICES = ["auth-service", "payment-gateway", "user-api", "notification-worker", "storage-api"]
@@ -72,7 +70,7 @@ def send_bulk_logs(logs, batch_size=500):
 
 def main():
     print(f"Seeding logs into {ES_URL}/{INDEX}...")
-    logs = [generate_recent_log() for _ in range(100)]
+    logs = [generate_recent_log() for _ in range(SEED_COUNT)]
     print(f"Generated {len(logs)} logs, sending via Bulk API...")
     send_bulk_logs(logs)
     print("Done.")

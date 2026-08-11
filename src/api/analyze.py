@@ -3,7 +3,7 @@ from collections import Counter
 from datetime import datetime, timezone
 
 from fastapi import APIRouter
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.es_client import OpenSearchClient
 from src.core.llm_client import LLMClient
@@ -12,44 +12,43 @@ router = APIRouter()
 llm = LLMClient()
 es = OpenSearchClient()
 
+# Сколько уникальных ошибок максимум отдаём в LLM (для скорости и полноты JSON)
+MAX_UNIQUE_ERRORS = 5
+
 
 class AnalyzeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     hours: float = 1.0
     severity: str = "ERROR"
-    limit: int = 30
+    limit: int = Field(default=10, ge=1, le=50)
 
 
 def _build_logs_prompt(logs: list) -> tuple[str, list[dict]]:
     """
-    Собирает текст для LLM из ВСЕХ логов: группировка по message + счётчики.
-    Так модель видит полный набор ошибок, а не цепляется за первую строку.
+    Компактный промпт: топ уникальных ошибок со счётчиками и одним семплом.
+    Меньше текста → быстрее и стабильнее ответ маленькой модели.
     """
     counts = Counter(log.get("message", "unknown") for log in logs)
     by_message: dict[str, list] = {}
     for log in logs:
         by_message.setdefault(log.get("message", "unknown"), []).append(log)
 
+    top_errors = counts.most_common(MAX_UNIQUE_ERRORS)
     summary = []
     blocks = [
-        f"Всего логов: {len(logs)}",
-        f"Уникальных ошибок: {len(counts)}",
-        "",
-        "Разбери КАЖДУЮ ошибку ниже (не только первую):",
+        f"Логов: {len(logs)}, уникальных (в анализе): {len(top_errors)}",
+        "Разбери КАЖДУЮ ошибку:",
         "",
     ]
 
-    for idx, (message, count) in enumerate(counts.most_common(), start=1):
-        samples = by_message[message][:3]
-        sample_lines = [
-            f"    - [{s.get('@timestamp', '')}] "
-            f"{s.get('level', '?')} / {s.get('service', '?')} / {s.get('pod', '?')}"
-            for s in samples
-        ]
-        blocks.append(f"{idx}. [{count}x] {message}")
-        blocks.extend(sample_lines)
-        blocks.append("")
+    for idx, (message, count) in enumerate(top_errors, start=1):
+        sample = by_message[message][0]
+        blocks.append(
+            f"{idx}. [{count}x] {message} "
+            f"({sample.get('level', '?')}/{sample.get('service', '?')}/"
+            f"{sample.get('pod', '?')})"
+        )
         summary.append(
             {
                 "rank": idx,
@@ -82,7 +81,7 @@ async def analyze_incident(req: AnalyzeRequest):
         f"Sending {len(logs)} logs "
         f"({len(error_summary)} unique errors, {len(log_text)} chars) to LLM"
     )
-    print(log_text[:800] + ("..." if len(log_text) > 800 else ""))
+    print(log_text[:500] + ("..." if len(log_text) > 500 else ""))
 
     result = llm.generate_remediation(log_text)
 
