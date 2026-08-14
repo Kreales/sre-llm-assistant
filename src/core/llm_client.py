@@ -1,11 +1,12 @@
 import httpx
 import json
 import re
-import os
 import logging
 from typing import Any, Dict, List
 
 from pydantic import BaseModel, Field
+
+from src.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -56,8 +57,9 @@ REMEDIATION_SCHEMA = {
 
 class LLMClient:
     def __init__(self, host: str | None = None, model: str | None = None):
-        self.host = (host or os.getenv("OLLAMA_HOST", "http://ollama:11434")).rstrip("/")
-        self.model = model or os.getenv("OLLAMA_MODEL", "gemma:2b")
+        self.host = (host or settings.ollama_host).rstrip("/")
+        self.model = model or settings.ollama_model
+        self.timeout = settings.llm_timeout_seconds
 
     def generate_remediation(self, logs_text: str) -> Dict[str, Any]:
         """
@@ -104,7 +106,7 @@ class LLMClient:
         )
 
         try:
-            with httpx.Client(timeout=300.0) as client:
+            with httpx.Client(timeout=self.timeout) as client:
                 response = client.post(f"{self.host}/api/chat", json=payload)
 
                 # Старые Ollama без schema в format — fallback на format=json
@@ -141,8 +143,8 @@ class LLMClient:
                 return self._normalize_remediation(parsed)
 
         except httpx.TimeoutException:
-            logger.error(f"LLM request timed out to {self.host}")
-            return {"error": "LLM timeout after 300s"}
+            logger.error("LLM request timed out to %s", self.host)
+            return {"error": f"LLM timeout after {int(self.timeout)}s"}
         except httpx.RequestError as e:
             logger.error(f"LLM request error: {e}")
             return {"error": f"LLM request error: {str(e)}"}

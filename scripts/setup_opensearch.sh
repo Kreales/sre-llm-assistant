@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-ES_URL="${ES_HOST:-http://localhost:9200}"
+ES_URL="${ES_HOST:-${ES_HOST_LOCAL:-http://localhost:9200}}"
 
 echo "Waiting for OpenSearch at ${ES_URL}..."
 for i in $(seq 1 60); do

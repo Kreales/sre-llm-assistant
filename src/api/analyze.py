@@ -1,19 +1,19 @@
-# src/api/analyze.py
 from collections import Counter
 from datetime import datetime, timezone
+import logging
 
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.core.config import settings
 from src.core.es_client import OpenSearchClient
 from src.core.llm_client import LLMClient
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 llm = LLMClient()
 es = OpenSearchClient()
-
-# Сколько уникальных ошибок максимум отдаём в LLM (для скорости и полноты JSON)
-MAX_UNIQUE_ERRORS = 5
 
 
 class AnalyzeRequest(BaseModel):
@@ -34,7 +34,7 @@ def _build_logs_prompt(logs: list) -> tuple[str, list[dict]]:
     for log in logs:
         by_message.setdefault(log.get("message", "unknown"), []).append(log)
 
-    top_errors = counts.most_common(MAX_UNIQUE_ERRORS)
+    top_errors = counts.most_common(settings.analyze_max_unique_errors)
     summary = []
     blocks = [
         f"Логов: {len(logs)}, уникальных (в анализе): {len(top_errors)}",
@@ -77,11 +77,13 @@ async def analyze_incident(req: AnalyzeRequest):
 
     log_text, error_summary = _build_logs_prompt(logs)
 
-    print(
-        f"Sending {len(logs)} logs "
-        f"({len(error_summary)} unique errors, {len(log_text)} chars) to LLM"
+    logger.info(
+        "Sending %s logs (%s unique errors, %s chars) to LLM",
+        len(logs),
+        len(error_summary),
+        len(log_text),
     )
-    print(log_text[:500] + ("..." if len(log_text) > 500 else ""))
+    logger.debug("%s", log_text[:500] + ("..." if len(log_text) > 500 else ""))
 
     result = llm.generate_remediation(log_text)
 

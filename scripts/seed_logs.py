@@ -5,7 +5,7 @@ import random
 import requests
 from datetime import datetime, timedelta
 
-ES_URL = os.getenv("ES_HOST", "http://localhost:9200")
+ES_URL = os.getenv("ES_HOST") or os.getenv("ES_HOST_LOCAL", "http://localhost:9200")
 INDEX = "sre-logs-" + datetime.utcnow().strftime("%Y.%m.%d")
 SEED_COUNT = int(os.getenv("SEED_LOG_COUNT", "15"))
 

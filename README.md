@@ -9,7 +9,7 @@
 - Fluent Bit + OpenSearch + Dashboards — логи
 - Ollama (`gemma:2b`) — локальная модель
 - Prometheus + Grafana — метрики
-- GitHub Actions — unit-тесты и smoke на docker compose
+- GitHub Actions — unit-тесты, smoke на docker compose, сборка образа в GHCR и деплой
 
 ## Как поднять
 
@@ -68,8 +68,36 @@ make down     # остановить, снести тома
 make build    # собрать образ
 make test     # тесты
 make seed     # template + логи
+make deploy   # выкатить образ из GHCR (нужен SRE_API_IMAGE)
 make help
 ```
+
+## CI/CD
+
+Пайплайн в `.github/workflows/ci.yml`:
+
+1. **unit-tests** — pytest, на каждый push и PR
+2. **integration-smoke** — поднять OpenSearch + Ollama + API и прогнать `/health` и `/analyze`
+3. **build-and-push** — после тестов на `main` собрать `sre-api` и запушить в GitHub Container Registry
+4. **deploy** — по SSH на сервер: `git pull`, `docker compose pull`, `up -d`, проверка `/health`
+
+На PR деплой не запускается. Пока не задан `DEPLOY_PATH`, job **deploy** пропускается — образ всё равно уходит в GHCR. Ручной запуск: Actions → CI/CD Pipeline → Run workflow.
+
+### Секреты и переменные
+
+GitHub → Settings → Environments → `production`:
+
+| Тип | Имя | Назначение |
+|-----|-----|------------|
+| Secret | `DEPLOY_HOST` | IP или DNS сервера |
+| Secret | `DEPLOY_USER` | SSH-пользователь |
+| Secret | `DEPLOY_SSH_KEY` | приватный ключ (без пароля) |
+| Variable | `DEPLOY_PATH` | путь к клону репо, например `/home/ubuntu/sre-llm-assistant` |
+| Variable | `DEPLOY_PORT` | SSH-порт, по умолчанию `22` |
+
+На сервере заранее: Docker, Docker Compose, клон репо, `.env` (см. `.env.example`), `vm.max_map_count=262144` для OpenSearch.
+
+Образ: `ghcr.io/<owner>/sre-llm-assistant/sre-api:<sha>` и `:latest`. После первого пуша в GHCR привяжи пакет к репозиторию (Package settings → Connect repository), иначе сервер не сможет его скачать.
 
 ## Структура репо
 

@@ -1,10 +1,13 @@
-from fastapi import FastAPI
-from prometheus_fastapi_instrumentator import Instrumentator
-from src.api.analyze import router as analyze_router
 from datetime import datetime
 import logging
 
-logging.basicConfig(level=logging.INFO)
+from fastapi import FastAPI
+from prometheus_fastapi_instrumentator import Instrumentator
+
+from src.api.analyze import router as analyze_router
+from src.core.config import settings
+
+logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
@@ -47,4 +50,4 @@ logger.info("SRE LLM Assistant API started")
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=settings.api_port)
