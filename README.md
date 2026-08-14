@@ -42,14 +42,17 @@ curl -X POST http://localhost:8001/api/v1/analyze \
 | Ollama | http://localhost:11434 |
 | Prometheus | http://localhost:9090/targets |
 | Grafana | http://localhost:3000 (admin / admin) |
+| cAdvisor | http://localhost:8080 |
 
 ### Grafana и Prometheus
 
-1. Prometheus: http://localhost:9090/targets — job `sre-api` должен быть UP.
+1. Prometheus: http://localhost:9090/targets — jobs `sre-api` и `cadvisor` должны быть UP.
 2. Grafana: http://localhost:3000, логин `admin`/`admin` (можно и без логина, Viewer).
    Datasource Prometheus уже заведён через provisioning.
    Дашборд лежит в папке SRE: **SRE LLM Assistant**.
-3. Чтобы на графиках что-то появилось, дерни `/health` или `/analyze`.
+3. Чтобы на графиках что-то появилось: `make demo` (или `bash scripts/demo_metrics.sh`).
+   Скрипт ~90 секунд бьёт `/health`, `/metrics`, `/analyze`, OpenSearch, Prometheus и Grafana.
+   Длительность и параллельность: `LOADGEN_DURATION=120 LOADGEN_CONCURRENCY=6 make demo`.
 
 ## API
 

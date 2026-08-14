@@ -91,6 +91,40 @@ services:
       retries: 10
       start_period: 60s
 
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: cadvisor
+    privileged: true
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=10s
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports: ["${CADVISOR_HOST_PORT}:8080"]
+    networks: [sre-net]
+
+  docker-net-exporter:
+    image: python:3.10-slim
+    container_name: docker-net-exporter
+    command: ["python", "/app/docker_net_exporter.py"]
+    environment:
+      COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME:-sre-llm-assistant}
+      EXPORTER_PORT: "9101"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./scripts/docker_net_exporter.py:/app/docker_net_exporter.py:ro
+    ports: ["${DOCKER_NET_EXPORTER_PORT}:9101"]
+    networks: [sre-net]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9101/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
   prometheus:
     image: prom/prometheus:v2.54.1
     container_name: prometheus

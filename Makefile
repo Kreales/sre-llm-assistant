@@ -1,4 +1,4 @@
-.PHONY: up down test build docs clean deploy help
+.PHONY: up down test build docs clean deploy demo help
 
 ifneq (,$(wildcard .env))
 include .env
@@ -43,6 +43,9 @@ deploy:
 	@test -n "$(SRE_API_IMAGE)" || { echo "Set SRE_API_IMAGE, e.g. ghcr.io/owner/sre-llm-assistant/sre-api:latest"; exit 1; }
 	bash scripts/deploy.sh
 
+demo:
+	bash scripts/demo_metrics.sh
+
 docs:
 	@echo "Fetching OpenAPI schema..."
 	mkdir -p docs
@@ -66,5 +69,6 @@ help:
 	@echo "  make seed    - OpenSearch template + sample logs"
 	@echo "  make docs    - save openapi.json"
 	@echo "  make deploy  - pull GHCR image and restart stack (needs SRE_API_IMAGE)"
+	@echo "  make demo    - generate traffic for Grafana/Prometheus"
 	@echo "  make clean   - prune docker leftovers"
 	@echo "  make help    - this help"

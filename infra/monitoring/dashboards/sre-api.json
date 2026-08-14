@@ -225,6 +225,54 @@
           }
         ]
       }
+    },
+    {
+      "type": "timeseries",
+      "title": "Network receive",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (interface) (rate(container_network_receive_bytes_total{job=\"cadvisor\", id=\"/\", interface!~\"lo|veth.*\"}[1m]))",
+          "legendFormat": "{{interface}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Network transmit",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (interface) (rate(container_network_transmit_bytes_total{job=\"cadvisor\", id=\"/\", interface!~\"lo|veth.*\"}[1m]))",
+          "legendFormat": "{{interface}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        }
+      }
     }
   ],
   "refresh": "10s",
@@ -236,5 +284,5 @@
   "timezone": "browser",
   "title": "SRE LLM Assistant",
   "uid": "sre-llm-assistant",
-  "version": 1
+  "version": 3
 }
