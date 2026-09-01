@@ -24,10 +24,10 @@ class AnalyzeRequest(BaseModel):
     limit: int = Field(default=10, ge=1, le=50)
 
 
-def _build_logs_prompt(logs: list) -> tuple[str, list[dict]]:
+def _build_error_list(logs: list) -> tuple[list[dict], list[dict]]:
     """
-    Компактный промпт: топ уникальных ошибок со счётчиками и одним семплом.
-    Меньше текста → быстрее и стабильнее ответ маленькой модели.
+    Топ уникальных ошибок со счётчиками и метаданными для LLM.
+    Каждая ошибка анализируется отдельным запросом — стабильнее для маленькой модели.
     """
     counts = Counter(log.get("message", "unknown") for log in logs)
     by_message: dict[str, list] = {}
@@ -35,19 +35,19 @@ def _build_logs_prompt(logs: list) -> tuple[str, list[dict]]:
         by_message.setdefault(log.get("message", "unknown"), []).append(log)
 
     top_errors = counts.most_common(settings.analyze_max_unique_errors)
+    errors_for_llm = []
     summary = []
-    blocks = [
-        f"Логов: {len(logs)}, уникальных (в анализе): {len(top_errors)}",
-        "Разбери КАЖДУЮ ошибку:",
-        "",
-    ]
 
     for idx, (message, count) in enumerate(top_errors, start=1):
         sample = by_message[message][0]
-        blocks.append(
-            f"{idx}. [{count}x] {message} "
-            f"({sample.get('level', '?')}/{sample.get('service', '?')}/"
-            f"{sample.get('pod', '?')})"
+        errors_for_llm.append(
+            {
+                "message": message,
+                "count": count,
+                "level": sample.get("level", "ERROR"),
+                "service": sample.get("service", "unknown"),
+                "pod": sample.get("pod", "unknown"),
+            }
         )
         summary.append(
             {
@@ -60,7 +60,7 @@ def _build_logs_prompt(logs: list) -> tuple[str, list[dict]]:
             }
         )
 
-    return "\n".join(blocks), summary
+    return errors_for_llm, summary
 
 
 @router.post("/analyze")
@@ -75,17 +75,15 @@ async def analyze_incident(req: AnalyzeRequest):
             "request": req.model_dump(),
         }
 
-    log_text, error_summary = _build_logs_prompt(logs)
+    errors_for_llm, error_summary = _build_error_list(logs)
 
     logger.info(
-        "Sending %s logs (%s unique errors, %s chars) to LLM",
+        "Sending %s logs (%s unique errors) to LLM",
         len(logs),
         len(error_summary),
-        len(log_text),
     )
-    logger.debug("%s", log_text[:500] + ("..." if len(log_text) > 500 else ""))
 
-    result = llm.generate_remediation(log_text)
+    result = llm.generate_remediation(errors_for_llm)
 
     return {
         "request": req.model_dump(),

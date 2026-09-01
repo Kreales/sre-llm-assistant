@@ -12,11 +12,13 @@ class Settings(BaseSettings):
     es_host: str = "http://opensearch:9200"
     es_index_pattern: str = "sre-logs-*"
     ollama_host: str = "http://ollama:11434"
-    ollama_model: str = "gemma:2b"
+    ollama_model: str = "llama3.2:3b"
     log_level: str = "info"
     api_port: int = 8000
     analyze_max_unique_errors: int = 5
     llm_timeout_seconds: float = 300.0
+    llm_per_call_timeout_seconds: float = 90.0
+    llm_max_retries: int = 2
 
 
 settings = Settings()

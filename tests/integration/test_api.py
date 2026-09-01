@@ -57,12 +57,11 @@ def test_analyze_endpoint_returns_json(mock_get_logs, mock_llm):
     assert data["unique_errors"] == 2
     assert len(data["error_summary"]) == 2
 
-    sent_text = mock_llm.call_args[0][0]
-    assert "Connection refused" in sent_text
-    assert "OOMKilled" in sent_text
-    assert "[2x]" in sent_text
-    assert "[1x]" in sent_text
-    assert "Разбери КАЖДУЮ ошибку" in sent_text
+    sent_errors = mock_llm.call_args[0][0]
+    assert len(sent_errors) == 2
+    assert sent_errors[0]["message"] == "Connection refused"
+    assert sent_errors[0]["count"] == 2
+    assert sent_errors[1]["message"] == "OOMKilled"
 
 
 @patch("src.api.analyze.es.get_error_logs")

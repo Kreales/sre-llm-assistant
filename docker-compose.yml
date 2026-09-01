@@ -78,6 +78,8 @@ services:
       - API_PORT=${API_PORT}
       - ANALYZE_MAX_UNIQUE_ERRORS=${ANALYZE_MAX_UNIQUE_ERRORS}
       - LLM_TIMEOUT_SECONDS=${LLM_TIMEOUT_SECONDS}
+      - LLM_PER_CALL_TIMEOUT_SECONDS=${LLM_PER_CALL_TIMEOUT_SECONDS}
+      - LLM_MAX_RETRIES=${LLM_MAX_RETRIES}
     networks: [sre-net]
     depends_on:
       opensearch:

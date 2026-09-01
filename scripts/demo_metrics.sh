@@ -68,7 +68,7 @@ analyze_loop() {
   while [[ "$(date +%s)" -lt "$END" ]]; do
     echo "POST ${API_URL}/api/v1/analyze (LLM, may take a while)"
     curl -sS -o /dev/null -w "%{http_code} %{time_total}s  POST /analyze\n" \
-      --max-time "${LLM_TIMEOUT_SECONDS:-120}" \
+      --max-time "${LLM_TIMEOUT_SECONDS:-300}" \
       -X POST "${API_URL}/api/v1/analyze" \
       -H "Content-Type: application/json" \
       -d '{"hours": 1, "limit": 10}' || true

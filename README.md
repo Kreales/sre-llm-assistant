@@ -7,7 +7,7 @@
 
 - FastAPI (`sre-api`) — эндпоинт анализа
 - Fluent Bit + OpenSearch + Dashboards — логи
-- Ollama (`gemma:2b`) — локальная модель
+- Ollama (`llama3.2:3b`) — локальная модель (оптимально для CPU, ~6 GB RAM)
 - Prometheus + Grafana — метрики
 - GitHub Actions — unit-тесты, smoke на docker compose, сборка образа в GHCR и деплой
 
@@ -23,8 +23,8 @@ curl -sf http://localhost:8001/health
 bash scripts/setup_opensearch.sh
 python scripts/seed_logs.py
 
-# модель, если ещё не скачана
-docker exec ollama ollama pull gemma:2b
+# модель, если ещё не скачана (нужно ~2 GB на диске, ~3 GB RAM в работе)
+docker exec ollama ollama pull llama3.2:3b
 
 # анализ
 curl -X POST http://localhost:8001/api/v1/analyze \
