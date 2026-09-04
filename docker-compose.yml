@@ -6,6 +6,7 @@ services:
       OPENSEARCH_INITIAL_ADMIN_PASSWORD: "${ES_PASS}"
       DISABLE_SECURITY_PLUGIN: "true"
       discovery.type: single-node
+      cluster.name: "${OPENSEARCH_CLUSTER_NAME}"
       ES_JAVA_OPTS: "${ES_JAVA_OPTS}"
       bootstrap.memory_lock: "false"
     ulimits:
@@ -38,6 +39,10 @@ services:
   fluent-bit:
     image: fluent/fluent-bit:3.0.4
     container_name: fluent-bit
+    environment:
+      FLUENTBIT_OS_HOST: ${FLUENTBIT_OS_HOST}
+      FLUENTBIT_OS_PORT: ${FLUENTBIT_OS_PORT}
+      FLUENTBIT_OS_INDEX_PREFIX: ${FLUENTBIT_OS_INDEX_PREFIX}
     volumes:
       - ./infra/fluentbit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
       - ./infra/fluentbit/parsers.conf:/fluent-bit/etc/parsers.conf:ro
@@ -66,7 +71,7 @@ services:
     image: ${SRE_API_IMAGE:-sre-api:local}
     build:
       context: .
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile
     container_name: sre-api
     ports: ["${API_HOST_PORT}:${API_PORT}"]
     environment:

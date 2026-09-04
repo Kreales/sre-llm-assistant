@@ -1,3 +1,5 @@
+# Targets — DNS-имена сервисов из docker-compose (сеть sre-net).
+# Порты — внутренние порты контейнеров, не HOST_PORT из .env.
 global:
   scrape_interval: 10s
   evaluation_interval: 10s

@@ -26,7 +26,7 @@ down:
 
 build:
 	@echo "Building sre-api image..."
-	docker build -t sre-api:latest -f Dockerfile.dev .
+	docker build -t sre-api:latest -f Dockerfile .
 	@echo "Built sre-api:latest"
 
 test:

@@ -41,13 +41,13 @@ curl -X POST http://localhost:8001/api/v1/analyze \
 | Dashboards | http://localhost:5601 |
 | Ollama | http://localhost:11434 |
 | Prometheus | http://localhost:9090/targets |
-| Grafana | http://localhost:3000 (admin / admin) |
+| Grafana | http://localhost:3000 (логин/пароль из `.env`: `GF_SECURITY_*`) |
 | cAdvisor | http://localhost:8080 |
 
 ### Grafana и Prometheus
 
 1. Prometheus: http://localhost:9090/targets — jobs `sre-api` и `cadvisor` должны быть UP.
-2. Grafana: http://localhost:3000, логин `admin`/`admin` (можно и без логина, Viewer).
+2. Grafana: http://localhost:3000, логин из `.env` (анонимный Viewer тоже включён).
    Datasource Prometheus уже заведён через provisioning.
    Дашборд лежит в папке SRE: **SRE LLM Assistant**.
 3. Чтобы на графиках что-то появилось: `make demo` (или `bash scripts/demo_metrics.sh`).

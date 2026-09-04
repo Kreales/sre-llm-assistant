@@ -1,4 +1,4 @@
-cluster.name: sre-diploma-cluster
+# cluster.name задаётся через env в docker-compose (OPENSEARCH_CLUSTER_NAME)
 node.name: os-node-1
 
 network.host: 0.0.0.0
