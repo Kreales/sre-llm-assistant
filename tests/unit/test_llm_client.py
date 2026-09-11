@@ -1,9 +1,11 @@
+# Юнит-тесты LLMClient: нормализация, fallback, quality, risk, JSON-парсинг.
 from unittest.mock import patch
 
 from src.core.llm_client import LLMClient
 
 
 def test_normalize_fills_missing_fields():
+    """Неполные issues дополняются дефолтами (risk, commands, summary)."""
     client = LLMClient()
     result = client._normalize_remediation(
         {
@@ -26,6 +28,7 @@ def test_normalize_fills_missing_fields():
 
 
 def test_normalize_replaces_placeholder_priority():
+    """Шаблонный priority_order заменяется на реальные тексты ошибок."""
     client = LLMClient()
     result = client._normalize_remediation(
         {
@@ -45,6 +48,7 @@ def test_normalize_replaces_placeholder_priority():
 
 
 def test_normalize_keeps_complete_payload():
+    """Валидный payload проходит без изменений."""
     client = LLMClient()
     payload = {
         "issues": [
@@ -62,6 +66,7 @@ def test_normalize_keeps_complete_payload():
 
 
 def test_generate_remediation_returns_fallback_on_llm_failure():
+    """При ошибке Ollama возвращается эвристический fallback."""
     client = LLMClient()
     errors = [
         {
@@ -85,6 +90,7 @@ def test_generate_remediation_returns_fallback_on_llm_failure():
 
 
 def test_generate_remediation_validates_llm_response():
+    """Успешный JSON от LLM проходит валидацию и попадает в issues."""
     client = LLMClient()
     errors = [
         {
@@ -111,6 +117,7 @@ def test_generate_remediation_validates_llm_response():
 
 
 def test_quality_issue_rejects_placeholder_commands():
+    """Команды с плейсхолдерами отклоняются проверкой качества."""
     client = LLMClient()
     issue = {
         "error": "timeout",
@@ -125,6 +132,7 @@ def test_quality_issue_rejects_placeholder_commands():
 
 
 def test_infer_risk_for_oom_and_critical():
+    """Эвристика risk: OOM/timeout/CRITICAL повышают уровень."""
     client = LLMClient()
     assert client._infer_risk("OOMKilled: limit", "ERROR", "low") == "high"
     assert client._infer_risk("Timeout upstream", "CRITICAL", "low") == "high"
@@ -132,6 +140,7 @@ def test_infer_risk_for_oom_and_critical():
 
 
 def test_build_priority_order_sorts_by_risk():
+    """priority_order: high → medium → low."""
     client = LLMClient()
     issues = [
         {"error": "low issue", "risk": "low"},
@@ -146,6 +155,7 @@ def test_build_priority_order_sorts_by_risk():
 
 
 def test_parse_json_response_extracts_object():
+    """JSON вырезается даже если вокруг есть лишний текст."""
     client = LLMClient()
     parsed = client._parse_json_response('prefix {"error": "x", "risk": "low"} suffix')
     assert parsed["error"] == "x"

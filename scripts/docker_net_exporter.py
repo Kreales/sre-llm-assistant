@@ -17,6 +17,8 @@ PROJECT = os.getenv("COMPOSE_PROJECT", "").strip()
 
 
 class UnixHTTPConnection(HTTPConnection):
+    """HTTP поверх Unix-сокета Docker daemon."""
+
     def __init__(self, sock_path: str):
         super().__init__("localhost")
         self.sock_path = sock_path
@@ -27,6 +29,7 @@ class UnixHTTPConnection(HTTPConnection):
 
 
 def docker_get(path: str) -> dict | list:
+    """GET к Docker Engine API; возвращает разобранный JSON."""
     conn = UnixHTTPConnection(SOCK)
     try:
         conn.request("GET", f"/{API}{path}")
@@ -40,6 +43,7 @@ def docker_get(path: str) -> dict | list:
 
 
 def collect() -> list[tuple[str, int, int]]:
+    """Собирает (имя_контейнера, rx_bytes, tx_bytes) для compose-сервисов."""
     rows: list[tuple[str, int, int]] = []
     for c in docker_get("/containers/json"):
         labels = c.get("Labels") or {}
@@ -47,9 +51,11 @@ def collect() -> list[tuple[str, int, int]]:
         project = labels.get("com.docker.compose.project", "")
         if not service:
             continue
+        # Фильтр по имени compose-проекта, если задан COMPOSE_PROJECT.
         if PROJECT and project != PROJECT:
             continue
         name = (c.get("Names") or [f"/{service}"])[0].lstrip("/")
+        # one-shot stats: один снимок без stream.
         stats = docker_get(f"/containers/{quote(c['Id'])}/stats?stream=false&one-shot=true")
         nets = stats.get("networks") or {}
         rx = tx = 0
@@ -63,6 +69,7 @@ def collect() -> list[tuple[str, int, int]]:
 
 
 def render() -> bytes:
+    """Формирует текст в exposition format Prometheus."""
     lines = [
         "# HELP docker_container_network_receive_bytes_total Bytes received by the container",
         "# TYPE docker_container_network_receive_bytes_total counter",
@@ -81,8 +88,10 @@ def render() -> bytes:
 
 
 class Handler(BaseHTTPRequestHandler):
+    """Минимальный HTTP: /health и /metrics."""
+
     def log_message(self, fmt, *args):
-        return
+        return  # глушим access-логи
 
     def do_GET(self):
         if self.path in ("/health", "/healthz"):

@@ -1,4 +1,6 @@
+# Полный стек SRE LLM Assistant: логи, LLM, API, мониторинг.
 services:
+  # Хранилище логов (single-node, security plugin отключён).
   opensearch:
     image: opensearchproject/opensearch:2.15.0
     container_name: opensearch
@@ -10,7 +12,7 @@ services:
       ES_JAVA_OPTS: "${ES_JAVA_OPTS}"
       bootstrap.memory_lock: "false"
     ulimits:
-      nofile: { soft: 65536, hard: 65536 }
+      nofile: { soft: 65536, hard: 65536 }  # OpenSearch требует высокий лимит FD
     ports:
       - "${ES_HOST_PORT}:9200"
     volumes:
@@ -24,6 +26,7 @@ services:
       retries: 30
       start_period: 40s
 
+  # UI для просмотра индексов OpenSearch.
   opensearch-dashboards:
     image: opensearchproject/opensearch-dashboards:2.15.0
     container_name: dashboards
@@ -36,6 +39,7 @@ services:
     networks: [sre-net]
     depends_on: { opensearch: { condition: service_healthy } }
 
+  # Сбор логов (tail + synthetic) и отправка в OpenSearch.
   fluent-bit:
     image: fluent/fluent-bit:3.0.4
     container_name: fluent-bit
@@ -49,6 +53,7 @@ services:
     networks: [sre-net]
     depends_on: { opensearch: { condition: service_healthy } }
 
+  # Локальная LLM для анализа ошибок.
   ollama:
     image: ollama/ollama:0.5.7
     container_name: ollama
@@ -67,6 +72,7 @@ services:
       retries: 10
       start_period: 20s
 
+  # FastAPI: /api/v1/analyze, /health, /metrics.
   sre-api:
     image: ${SRE_API_IMAGE:-sre-api:local}
     build:
@@ -98,6 +104,7 @@ services:
       retries: 10
       start_period: 60s
 
+  # Метрики контейнеров (CPU/mem) для Grafana.
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.49.1
     container_name: cadvisor
@@ -114,6 +121,7 @@ services:
     ports: ["${CADVISOR_HOST_PORT}:8080"]
     networks: [sre-net]
 
+  # Кастомный exporter: RX/TX по контейнерам compose-проекта.
   docker-net-exporter:
     image: python:3.10-slim
     container_name: docker-net-exporter
@@ -132,6 +140,7 @@ services:
       timeout: 5s
       retries: 5
 
+  # Скрейпит sre-api, cAdvisor и docker-net-exporter.
   prometheus:
     image: prom/prometheus:v2.54.1
     container_name: prometheus
@@ -139,7 +148,7 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
-      - --web.enable-lifecycle
+      - --web.enable-lifecycle  # reload конфига без рестарта
     volumes:
       - ./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
@@ -148,6 +157,7 @@ services:
       sre-api:
         condition: service_healthy
 
+  # Дашборды; datasource и dashboard provisioning из infra/monitoring.
   grafana:
     image: grafana/grafana:11.2.0
     container_name: grafana

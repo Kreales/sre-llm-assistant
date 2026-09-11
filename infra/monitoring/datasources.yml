@@ -1,12 +1,13 @@
+# Grafana provisioning: datasource Prometheus (внутри docker-сети).
 apiVersion: 1
 
 datasources:
   - name: Prometheus
     type: prometheus
-    access: proxy
+    access: proxy  # запросы идут через Grafana-backend
     uid: prometheus
     url: http://prometheus:9090
     isDefault: true
     editable: false
     jsonData:
-      timeInterval: 15s
+      timeInterval: 15s  # шаг для rate()/графиков

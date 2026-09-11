@@ -20,6 +20,7 @@ CADVISOR_URL="http://localhost:${CADVISOR_HOST_PORT:-8080}"
 DURATION="${LOADGEN_DURATION:-90}"
 CONCURRENCY="${LOADGEN_CONCURRENCY:-4}"
 
+# Один HTTP-запрос с кодом ответа и временем; ошибки не валят скрипт.
 hit() {
   local timeout="${2:-5}"
   curl -sS -o /dev/null -w "%{http_code} %{time_total}s  %{url}\n" \
@@ -44,6 +45,7 @@ echo
 
 END="$(($(date +%s) + DURATION))"
 
+# Фоновый воркер: лёгкие эндпоинты + 422 на analyze + health соседних сервисов.
 worker() {
   local id="$1"
   while [[ "$(date +%s)" -lt "$END" ]]; do
@@ -52,6 +54,7 @@ worker() {
     hit "${API_URL}/metrics"
     hit "${API_URL}/docs"
     hit "${API_URL}/no-such-route"
+    # Невалидный limit → 422 (метрики ошибок без тяжёлого LLM).
     curl -sS -o /dev/null -w "%{http_code} %{time_total}s  POST /analyze (422)\n" \
       --max-time 5 -X POST "${API_URL}/api/v1/analyze" \
       -H "Content-Type: application/json" \
@@ -64,6 +67,7 @@ worker() {
   done
 }
 
+# Редкие «настоящие» вызовы /analyze (могут быть долгими из‑за LLM).
 analyze_loop() {
   while [[ "$(date +%s)" -lt "$END" ]]; do
     echo "POST ${API_URL}/api/v1/analyze (LLM, may take a while)"

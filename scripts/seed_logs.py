@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""Генерация демо-логов ERROR/CRITICAL и отправка в OpenSearch через Bulk API."""
 import os
 import json
 import random
@@ -9,6 +10,7 @@ ES_URL = os.getenv("ES_HOST") or os.getenv("ES_HOST_LOCAL", "http://localhost:92
 INDEX = "sre-logs-" + datetime.utcnow().strftime("%Y.%m.%d")
 SEED_COUNT = int(os.getenv("SEED_LOG_COUNT", "15"))
 
+# Типовые инциденты для демо и интеграционных тестов.
 ERROR_SCENARIOS = [
     {"level": "ERROR", "message": "ConnectionRefusedError: Connection to postgres:5432 refused"},
     {"level": "ERROR", "message": "OOMKilled: Container exceeded memory limit (512Mi)"},
@@ -21,6 +23,7 @@ SERVICES = ["auth-service", "payment-gateway", "user-api", "notification-worker"
 
 
 def generate_recent_log():
+    """Один случайный лог с timestamp в пределах последних 5 минут."""
     scenario = random.choice(ERROR_SCENARIOS)
     service = random.choice(SERVICES)
     timestamp = datetime.utcnow() - timedelta(minutes=random.randint(0, 5))
@@ -35,6 +38,7 @@ def generate_recent_log():
 
 
 def send_bulk_logs(logs, batch_size=500):
+    """Отправляет логи пакетами в формате NDJSON (_bulk)."""
     total_sent = 0
     total_logs = len(logs)
 
@@ -42,6 +46,7 @@ def send_bulk_logs(logs, batch_size=500):
         batch = logs[i : i + batch_size]
         bulk_body = ""
         for log in batch:
+            # Каждая запись: action-строка + документ.
             bulk_body += json.dumps({"index": {"_index": INDEX}}) + "\n"
             bulk_body += json.dumps(log) + "\n"
 
@@ -69,6 +74,7 @@ def send_bulk_logs(logs, batch_size=500):
 
 
 def main():
+    """Точка входа: сгенерировать SEED_COUNT логов и залить в индекс."""
     print(f"Seeding logs into {ES_URL}/{INDEX}...")
     logs = [generate_recent_log() for _ in range(SEED_COUNT)]
     print(f"Generated {len(logs)} logs, sending via Bulk API...")

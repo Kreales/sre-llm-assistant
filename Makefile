@@ -1,5 +1,7 @@
+# Удобные команды для локальной разработки и деплоя.
 .PHONY: up down test build docs clean deploy demo help
 
+# Подхватываем переменные из .env (порты, URL и т.п.).
 ifneq (,$(wildcard .env))
 include .env
 endif
@@ -11,6 +13,7 @@ DASHBOARDS_HOST_PORT ?= 5601
 ES_HOST_LOCAL ?= http://localhost:9200
 API_URL ?= http://localhost:8001
 
+# Поднять весь стек (build + detach).
 up:
 	@echo "Starting SRE LLM Assistant..."
 	$(COMPOSE) up -d --build
@@ -19,33 +22,40 @@ up:
 	@echo "  OpenSearch: http://localhost:$(ES_HOST_PORT)"
 	@echo "  Dashboards: http://localhost:$(DASHBOARDS_HOST_PORT)"
 
+# Остановить и удалить volumes.
 down:
 	@echo "Stopping services..."
 	$(COMPOSE) down -v
 	@echo "Done."
 
+# Собрать образ sre-api локально.
 build:
 	@echo "Building sre-api image..."
 	docker build -t sre-api:latest -f Dockerfile .
 	@echo "Built sre-api:latest"
 
+# Юнит- и интеграционные тесты.
 test:
 	@echo "Running tests..."
 	python3 -m pytest tests/unit/ -v
 	python3 -m pytest tests/integration/ -v
 	@echo "Tests passed."
 
+# Шаблон индекса + демо-логи в OpenSearch.
 seed:
 	ES_HOST=$(ES_HOST_LOCAL) bash scripts/setup_opensearch.sh
 	ES_HOST=$(ES_HOST_LOCAL) python3 scripts/seed_logs.py
 
+# Деплой готового образа из GHCR (нужен SRE_API_IMAGE).
 deploy:
 	@test -n "$(SRE_API_IMAGE)" || { echo "Set SRE_API_IMAGE, e.g. ghcr.io/owner/sre-llm-assistant/sre-api:latest"; exit 1; }
 	bash scripts/deploy.sh
 
+# Нагрузка для заполнения графиков Grafana/Prometheus.
 demo:
 	bash scripts/demo_metrics.sh
 
+# Сохранить OpenAPI-схему в docs/api.json.
 docs:
 	@echo "Fetching OpenAPI schema..."
 	mkdir -p docs
@@ -53,6 +63,7 @@ docs:
 		&& echo "docs/api.json updated" \
 		|| echo "API not ready, skip openapi"
 
+# Остановить стек и почистить неиспользуемые Docker-ресурсы.
 clean:
 	@echo "Cleaning..."
 	$(COMPOSE) down -v --remove-orphans || true

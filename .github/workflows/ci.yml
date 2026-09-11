@@ -1,3 +1,4 @@
+# CI/CD: unit-тесты → smoke на compose → push образа в GHCR → deploy по SSH.
 name: CI/CD Pipeline - SRE LLM Assistant
 
 on:
@@ -11,6 +12,7 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
+  # Быстрые проверки без Docker-инфры.
   unit-tests:
     runs-on: ubuntu-latest
     steps:
@@ -30,12 +32,14 @@ jobs:
       - name: Run unit tests
         run: pytest tests/unit/ -v
 
+  # Поднимает OpenSearch + Ollama + API, сидит логи, бьёт /analyze.
   integration-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
+      # OpenSearch падает без достаточного vm.max_map_count.
       - name: Configure kernel parameters for OpenSearch
         run: |
           sudo sysctl -w vm.max_map_count=262144
@@ -122,6 +126,7 @@ jobs:
         if: always()
         run: docker compose down -v
 
+  # Сборка и публикация образа (не на PR).
   build-and-push:
     name: Build and push image
     needs: [unit-tests]
@@ -167,6 +172,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # Деплой на сервер по SSH, если задан vars.DEPLOY_PATH.
   deploy:
     name: Deploy
     needs: [build-and-push, integration-smoke]

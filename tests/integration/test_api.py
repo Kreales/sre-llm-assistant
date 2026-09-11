@@ -1,3 +1,4 @@
+# Интеграционные тесты API /analyze (ES и LLM замоканы).
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 from src.main import app
@@ -8,6 +9,7 @@ client = TestClient(app)
 @patch("src.api.analyze.llm.generate_remediation")
 @patch("src.api.analyze.es.get_error_logs")
 def test_analyze_endpoint_returns_json(mock_get_logs, mock_llm):
+    """Агрегация уникальных ошибок и структура remediation в ответе."""
     mock_get_logs.return_value = [
         {
             "@timestamp": "2026-07-31T10:00:00Z",
@@ -57,6 +59,7 @@ def test_analyze_endpoint_returns_json(mock_get_logs, mock_llm):
     assert data["unique_errors"] == 2
     assert len(data["error_summary"]) == 2
 
+    # В LLM уходят 2 уникальные ошибки; Connection refused встречается дважды.
     sent_errors = mock_llm.call_args[0][0]
     assert len(sent_errors) == 2
     assert sent_errors[0]["message"] == "Connection refused"
@@ -66,6 +69,7 @@ def test_analyze_endpoint_returns_json(mock_get_logs, mock_llm):
 
 @patch("src.api.analyze.es.get_error_logs")
 def test_analyze_no_logs(mock_get_logs):
+    """Пустой результат ES → status=no_logs без вызова LLM."""
     mock_get_logs.return_value = []
     response = client.post("/api/v1/analyze", json={"hours": 1})
     assert response.status_code == 200

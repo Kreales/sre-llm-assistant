@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
+# Деплой: pull образа sre-api из GHCR, restart compose, проверка /health.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# Подтянуть переменные из .env, если файл есть.
 if [[ -f .env ]]; then
   set -a
   # shellcheck disable=SC1091
@@ -20,6 +22,7 @@ fi
 export SRE_API_IMAGE="$IMAGE"
 HEALTH_URL="${API_URL:-http://localhost:${API_HOST_PORT:-8001}}/health"
 
+# Логин в GHCR, если передан токен (CI / remote deploy).
 if [[ -n "${GHCR_TOKEN:-}" ]]; then
   echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER:-github}" --password-stdin
 fi
@@ -28,6 +31,7 @@ echo "Deploying ${SRE_API_IMAGE}..."
 docker compose pull sre-api
 docker compose up -d --no-build
 
+# Подтянуть модель Ollama, если контейнер уже запущен.
 if docker exec ollama ollama list >/dev/null 2>&1; then
   docker exec ollama ollama pull "${OLLAMA_MODEL}"
 fi

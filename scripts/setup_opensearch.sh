@@ -1,4 +1,5 @@
 #!/bin/bash
+# Создаёт index template sre-logs-* в OpenSearch (mappings для логов).
 set -e
 
 ES_URL="${ES_HOST:-${ES_HOST_LOCAL:-http://localhost:9200}}"
@@ -19,11 +20,13 @@ done
 CURRENT_DATE=$(date +%Y.%m.%d)
 INDEX_NAME="sre-logs-${CURRENT_DATE}"
 
+# Чистый старт для seed: удаляем сегодняшний индекс, если был.
 echo "Deleting existing index: ${INDEX_NAME}"
 curl -sf -X DELETE "${ES_URL}/${INDEX_NAME}" > /dev/null 2>&1 || true
 
 echo "Creating index template..."
 
+# Template: keyword-поля для фильтров, text — для полнотекста.
 curl -sf -X PUT "${ES_URL}/_index_template/sre-logs-template" \
   -H 'Content-Type: application/json' \
   -d '{

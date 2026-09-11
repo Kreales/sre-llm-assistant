@@ -1,3 +1,4 @@
+# Клиент OpenSearch: выборка ERROR/CRITICAL логов за окно времени.
 import logging
 
 from opensearchpy import OpenSearch
@@ -8,6 +9,8 @@ logger = logging.getLogger(__name__)
 
 
 class OpenSearchClient:
+    """Обёртка над OpenSearch для запросов по индексу sre-logs-*."""
+
     def __init__(self, host: str | None = None):
         host = host or settings.es_host
         self.index = settings.es_index_pattern
@@ -26,6 +29,7 @@ class OpenSearchClient:
                     "must": [
                         {
                             "range": {
+                                # округление /m — стабильный диапазон на границе минуты
                                 "@timestamp": {
                                     "gte": f"now-{minutes}m/m"
                                 }

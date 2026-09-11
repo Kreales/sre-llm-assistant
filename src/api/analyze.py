@@ -1,3 +1,4 @@
+# API-эндпоинт анализа инцидентов: логи из OpenSearch → LLM → remediation.
 from collections import Counter
 from datetime import datetime, timezone
 import logging
@@ -17,6 +18,8 @@ es = OpenSearchClient()
 
 
 class AnalyzeRequest(BaseModel):
+    """Параметры запроса на анализ логов."""
+
     model_config = ConfigDict(extra="forbid")
 
     hours: float = 1.0
@@ -39,7 +42,7 @@ def _build_error_list(logs: list) -> tuple[list[dict], list[dict]]:
     summary = []
 
     for idx, (message, count) in enumerate(top_errors, start=1):
-        sample = by_message[message][0]
+        sample = by_message[message][0]  # берём первый лог как образец метаданных
         errors_for_llm.append(
             {
                 "message": message,
@@ -65,6 +68,7 @@ def _build_error_list(logs: list) -> tuple[list[dict], list[dict]]:
 
 @router.post("/analyze")
 async def analyze_incident(req: AnalyzeRequest):
+    """Читает ERROR/CRITICAL логи и возвращает remediation от LLM."""
     minutes = int(req.hours * 60)
     logs = es.get_error_logs(minutes=minutes, limit=req.limit)
 

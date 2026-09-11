@@ -1,3 +1,4 @@
+# Grafana provisioning: автозагрузка дашбордов из JSON-файлов.
 apiVersion: 1
 
 providers:
@@ -6,7 +7,7 @@ providers:
     folder: SRE
     type: file
     disableDeletion: false
-    updateIntervalSeconds: 30
+    updateIntervalSeconds: 30  # как часто перечитывать каталог
     allowUiUpdates: false
     options:
       path: /etc/grafana/provisioning/dashboards/json

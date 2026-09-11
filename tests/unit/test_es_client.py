@@ -1,9 +1,11 @@
+# Юнит-тест OpenSearchClient с моком клиента OpenSearch.
 from unittest.mock import patch
 from src.core.es_client import OpenSearchClient
 
 
 @patch("src.core.es_client.OpenSearch")
 def test_get_error_logs_success(mock_os):
+    """Успешный search возвращает _source документов и корректный body запроса."""
     mock_resp = {
         "hits": {
             "hits": [

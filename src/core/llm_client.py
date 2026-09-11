@@ -1,3 +1,4 @@
+# Клиент Ollama: анализ ошибок логов и генерация remediation (JSON).
 import httpx
 import json
 import logging
@@ -11,7 +12,9 @@ from src.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Чем меньше число — тем выше приоритет при сортировке.
 RISK_ORDER = {"high": 0, "medium": 1, "low": 2}
+# Маркеры «шаблонных» команд, которые считаем низкокачественным ответом LLM.
 PLACEHOLDER_MARKERS = (
     "<pod>",
     "<namespace>",
@@ -26,6 +29,8 @@ PLACEHOLDER_MARKERS = (
 
 
 class IssueItem(BaseModel):
+    """Одна проблема: ошибка, причина, риск и CLI-команды."""
+
     error: str = Field(description="Текст ошибки из логов")
     root_cause: str = Field(description="Причина и предложение по исправлению на русском")
     risk: str = Field(description="low, medium или high")
@@ -33,6 +38,8 @@ class IssueItem(BaseModel):
 
 
 class RemediationResponse(BaseModel):
+    """Итоговый ответ LLM по набору ошибок."""
+
     issues: List[IssueItem] = Field(description="По одной записи на каждую уникальную ошибку")
     summary: str = Field(description="1-2 предложения — общая картина инцидента")
     priority_order: List[str] = Field(
@@ -40,6 +47,7 @@ class RemediationResponse(BaseModel):
     )
 
 
+# JSON Schema для structured output Ollama (одна ошибка).
 SINGLE_ISSUE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -74,6 +82,8 @@ REMEDIATION_SCHEMA = {
 
 
 class LLMClient:
+    """Вызовы Ollama Chat API с ретраями, валидацией и fallback."""
+
     def __init__(self, host: str | None = None, model: str | None = None):
         self.host = (host or settings.ollama_host).rstrip("/")
         self.model = model or settings.ollama_model
@@ -99,6 +109,7 @@ class LLMClient:
         for error in errors:
             elapsed = time.monotonic() - started
             remaining_budget = self.timeout - elapsed
+            # Не начинаем новый вызов, если до общего дедлайна осталось < 5с.
             if remaining_budget < 5:
                 logger.warning(
                     "LLM time budget exhausted after %.1fs, using fallback for remaining errors",
@@ -119,6 +130,7 @@ class LLMClient:
     def _analyze_single_error(
         self, error: Dict[str, Any], timeout: float
     ) -> Dict[str, Any]:
+        """Один запрос к LLM с ретраями; при провале — эвристический fallback."""
         message = str(error.get("message") or "unknown")[:500]
         count = int(error.get("count") or 1)
         level = str(error.get("level") or "ERROR")
@@ -215,6 +227,7 @@ class LLMClient:
         return fallback
 
     def _quality_issue(self, issue: Dict[str, Any], expected_error: str) -> str | None:
+        """Проверяет качество ответа LLM; None — ок, иначе причина отклонения."""
         root_cause = issue.get("root_cause", "").strip()
         error_text = issue.get("error", "").strip()
         commands = issue.get("commands") or []
@@ -224,6 +237,7 @@ class LLMClient:
 
         normalized_error = expected_error.lower()
         normalized_root = root_cause.lower()
+        # Отсекаем случаи, когда модель просто пересказала текст ошибки.
         if normalized_root == normalized_error or normalized_root in normalized_error:
             return "root_cause повторяет текст ошибки"
         if normalized_error in normalized_root and len(root_cause) <= len(expected_error) + 10:
@@ -249,6 +263,7 @@ class LLMClient:
         return None
 
     def _infer_risk(self, message: str, level: str, model_risk: str) -> str:
+        """Корректирует risk по ключевым словам и уровню лога (эвристика поверх LLM)."""
         text = message.lower()
         level_upper = level.upper()
 
@@ -269,6 +284,7 @@ class LLMClient:
         schema: Dict[str, Any],
         timeout: float,
     ) -> tuple[str, str | None]:
+        """POST /api/chat. Возвращает (текст, None) или ("", сообщение_об_ошибке)."""
         payload = {
             "model": self.model,
             "messages": [
@@ -276,7 +292,7 @@ class LLMClient:
                 {"role": "user", "content": user_prompt},
             ],
             "stream": False,
-            "format": schema,
+            "format": schema,  # structured output; при 400 откатываемся на "json"
             "options": {
                 "temperature": 0,
                 "top_k": 20,
@@ -297,6 +313,7 @@ class LLMClient:
             with httpx.Client(timeout=http_timeout) as client:
                 response = client.post(f"{self.host}/api/chat", json=payload)
 
+                # Старые версии Ollama могут не принимать JSON Schema в format.
                 if response.status_code == 400 and "format" in response.text.lower():
                     payload["format"] = "json"
                     response = client.post(f"{self.host}/api/chat", json=payload)
@@ -333,7 +350,9 @@ class LLMClient:
         expected_error: str,
         error_context: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
+        """Приводит сырой JSON к полям IssueItem (типы, risk, плейсхолдеры в командах)."""
         item = data
+        # Иногда модель оборачивает одну issue в {"issues": [...]}
         if "issues" in data and isinstance(data["issues"], list) and data["issues"]:
             item = data["issues"][0]
 
@@ -378,6 +397,7 @@ class LLMClient:
         }
 
     def _fallback_issue(self, error: Dict[str, Any]) -> Dict[str, Any]:
+        """Эвристический ответ без LLM по ключевым словам в сообщении."""
         message = str(error.get("message") or "unknown")
         level = str(error.get("level") or "ERROR").upper()
         service = str(error.get("service") or "unknown")
@@ -416,6 +436,7 @@ class LLMClient:
         }
 
     def _build_summary(self, issues: List[Dict[str, Any]]) -> str:
+        """Краткое текстовое резюме по списку issues."""
         if not issues:
             return "Не удалось сформировать итог по логам."
 
@@ -427,6 +448,7 @@ class LLMClient:
         return " ".join(parts)
 
     def _build_priority_order(self, issues: List[Dict[str, Any]]) -> List[str]:
+        """Сортирует ошибки: high → medium → low."""
         sorted_issues = sorted(
             issues,
             key=lambda issue: (
@@ -440,6 +462,7 @@ class LLMClient:
         """Гарантирует наличие всех обязательных полей в ответе LLM."""
         issues_raw = data.get("issues")
         if not isinstance(issues_raw, list):
+            # Модель вернула один объект issue вместо обёртки issues[]
             if any(key in data for key in ("error", "root_cause", "commands")):
                 issues_raw = [data]
             else:
@@ -462,6 +485,7 @@ class LLMClient:
             priority = issue_errors
         else:
             priority = [str(item) for item in priority if item]
+            # Заменяем шаблонный priority_order на реальные тексты ошибок.
             if any(any(hint in item.lower() for hint in placeholder_hints) for item in priority):
                 priority = issue_errors
             elif issue_errors and not any(
@@ -476,6 +500,7 @@ class LLMClient:
         }
 
     def _parse_json_response(self, raw_response: str) -> Dict[str, Any]:
+        """Достаёт JSON-объект из ответа модели (даже с текстом вокруг)."""
         start_pos = raw_response.find("{")
         if start_pos == -1:
             return {
@@ -483,6 +508,7 @@ class LLMClient:
                 "raw_response_snippet": raw_response[:200],
             }
 
+        # Считаем скобки, чтобы вырезать первый полный объект.
         bracket_count = 0
         end_pos = -1
         for index, char in enumerate(raw_response[start_pos:], start=start_pos):
@@ -508,6 +534,7 @@ class LLMClient:
         try:
             return json.loads(json_str)
         except json.JSONDecodeError:
+            # Иногда модель отдаёт JSON с одинарными кавычками.
             try:
                 return json.loads(json_str.replace("'", '"'))
             except json.JSONDecodeError:

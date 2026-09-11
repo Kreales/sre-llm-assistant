@@ -1,3 +1,4 @@
+# Точка входа FastAPI-приложения SRE LLM Assistant.
 from datetime import datetime
 import logging
 
@@ -7,6 +8,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from src.api.analyze import router as analyze_router
 from src.core.config import settings
 
+# Уровень лога берётся из настроек (.env / env); при неизвестном значении — INFO.
 logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
 logger = logging.getLogger(__name__)
 
@@ -19,11 +21,13 @@ app = FastAPI(
 )
 
 app.include_router(analyze_router, prefix="/api/v1")
+# Экспорт метрик Prometheus на /metrics.
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 
 @app.get("/")
 async def root():
+    """Краткая информация о сервисе (liveness без проверки зависимостей)."""
     return {
         "status": "ok",
         "service": "SRE LLM Assistant",
@@ -34,6 +38,7 @@ async def root():
 
 @app.get("/health")
 async def health():
+    """Healthcheck для Docker/K8s и CI."""
     return {
         "status": "healthy",
         "service": "sre-api",

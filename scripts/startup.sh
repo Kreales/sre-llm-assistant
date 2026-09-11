@@ -1,4 +1,5 @@
 #!/bin/bash
+# Entrypoint контейнера sre-api: ждём OpenSearch, затем uvicorn.
 set -e
 
 ES_HOST="${ES_HOST:-http://opensearch:9200}"
